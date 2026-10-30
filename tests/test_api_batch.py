@@ -44,6 +44,12 @@ class ApiTests(unittest.TestCase):
         with urllib.request.urlopen(self.url + "/", timeout=3) as response:
             self.assertIn("Support Copilot", response.read().decode())
             self.assertIn("no-store", response.headers["Cache-Control"])
+        with urllib.request.urlopen(self.url + "/brand-g.svg", timeout=3) as response:
+            self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
+            self.assertIn(b"<svg", response.read())
+        with urllib.request.urlopen(self.url + "/city-banner.jpg", timeout=3) as response:
+            self.assertEqual(response.headers.get_content_type(), "image/jpeg")
+            self.assertTrue(response.read().startswith(b"\xff\xd8\xff"))
         with self.assertRaises(urllib.error.HTTPError) as failure:
             urllib.request.urlopen(self.url + "/data/rules.json", timeout=3)
         self.assertEqual(failure.exception.code, 404)

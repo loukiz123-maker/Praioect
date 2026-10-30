@@ -16,7 +16,13 @@ from .service import InputError, TriageService
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_REQUEST_BYTES = 1_048_576
-ASSETS = {"/": "index.html", "/app.css": "app.css", "/app.js": "app.js"}
+ASSETS = {
+    "/": "index.html",
+    "/app.css": "app.css",
+    "/app.js": "app.js",
+    "/brand-g.svg": "brand-g.svg",
+    "/city-banner.jpg": "city-banner.jpg",
+}
 
 
 class CopilotServer(ThreadingHTTPServer):

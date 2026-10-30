@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f6f7f6" />
-    <title>Support Copilot — рабочее пространство</title>
+    <meta name="theme-color" content="#11110f" />
+    <title>Grand Mobile — Support Copilot</title>
+    <link rel="icon" type="image/svg+xml" href="/brand-g.svg" />
     <link rel="stylesheet" href="/app.css" />
     <script src="/app.js" defer></script>
   </head>
@@ -16,17 +17,22 @@
           href="#workspace"
           aria-label="Support Copilot, на главную"
         >
-          <span class="brand-mark" aria-hidden="true"
-            ><span>g</span><i></i
-          ></span>
-          <span class="brand-copy"
-            ><strong>support<span>.</span></strong
-            ><small>GRAND MOBILE</small></span
-          >
+          <span class="brand-mark" aria-hidden="true">
+            <img src="/brand-g.svg" alt="" width="44" height="44" />
+          </span>
+          <span class="brand-copy">
+            <strong>GRAND <span>MOBILE</span></strong>
+            <small>SUPPORT COPILOT</small>
+          </span>
         </a>
         <div class="sidebar-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav class="sidebar-nav" aria-label="Основная навигация">
-          <a class="nav-link active" href="#workspace">
+          <a
+            class="nav-link active"
+            href="#workspace"
+            aria-label="Разбор обращения"
+            aria-current="location"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3.5" y="4" width="7" height="7" rx="1.4"></rect>
               <rect x="13.5" y="4" width="7" height="7" rx="1.4"></rect>
@@ -35,7 +41,11 @@
             </svg>
             <span>Разбор обращения</span><span class="nav-dot"></span>
           </a>
-          <a class="nav-link" href="#queue-section">
+          <a
+            class="nav-link"
+            href="#queue-section"
+            aria-label="Очередь обращений"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 6.5h16M4 12h16M4 17.5h16"></path>
               <circle cx="7" cy="6.5" r="1.2"></circle>
@@ -48,7 +58,11 @@
         </nav>
         <div class="sidebar-label sidebar-label-second">ИНФОРМАЦИЯ</div>
         <nav class="sidebar-nav" aria-label="Информация">
-          <a class="nav-link" href="#about-section">
+          <a
+            class="nav-link"
+            href="#about-section"
+            aria-label="Как это работает"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8.5"></circle>
               <path d="M12 10.5v5M12 7.5h.01"></path>
@@ -78,26 +92,31 @@
           <div class="topbar-right">
             <span class="status-indicator" id="connection"
               ><i></i><span>Подключение...</span></span
-            ><span class="avatar" aria-hidden="true">A</span>
+            ><span class="avatar" aria-hidden="true">G</span>
           </div>
         </header>
 
         <div class="page-content">
-          <section class="page-heading">
-            <div>
+          <section
+            class="page-heading"
+            aria-label="Рабочее пространство поддержки"
+          >
+            <div class="hero-content">
               <div class="eyebrow">
-                <span class="eyebrow-dot"></span> SUPPORT COPILOT
-                <span class="eyebrow-separator">/</span> CASE 03
+                <span class="eyebrow-dot"></span> GRAND MOBILE SUPPORT
+                <span class="eyebrow-separator">/</span> COPILOT 03
               </div>
               <h1>Разбор обращения<span class="heading-period">.</span></h1>
               <p>
-                От обращения игрока до понятного черновика — с опорой на
-                правила.
+                От обращения игрока до черновика ответа — с опорой на правила.
               </p>
+              <div class="hero-foot">
+                <span></span> РЕШЕНИЕ ВСЕГДА ЗА АДМИНИСТРАТОРОМ
+              </div>
             </div>
             <div class="mode-label">
-              <span class="mode-icon">✳</span
-              ><span
+              <span class="mode-icon">✳</span>
+              <span
                 ><strong>Локальный режим</strong
                 ><small>Без внешних LLM API</small></span
               >
@@ -240,8 +259,12 @@
                   >
                     <span class="sparkle">✳</span
                     ><span>Разобрать обращение</span
-                    ><span class="button-arrow">↗</span></button
-                  ><span class="keyboard-hint">Ctrl + Enter</span>
+                    ><span class="button-arrow">↗</span>
+                  </button>
+                  <button type="button" class="clear-button" id="clear-form">
+                    Очистить форму
+                  </button>
+                  <span class="keyboard-hint">Ctrl + Enter</span>
                 </div>
               </form>
               <div class="privacy-note">
@@ -267,7 +290,9 @@
               </div>
               <div class="empty-state" id="empty-state">
                 <div class="empty-art" aria-hidden="true">
-                  <div class="empty-circle"><span>✳</span></div>
+                  <div class="empty-circle">
+                    <img src="/brand-g.svg" alt="" width="58" height="58" />
+                  </div>
                   <i class="empty-star one">✧</i><i class="empty-star two">✦</i
                   ><i class="empty-star three">✧</i>
                 </div>
@@ -280,7 +305,12 @@
                   ><span>✦</span> НА ОСНОВЕ ПРАВИЛ ИГРЫ</span
                 >
               </div>
-              <div class="result-content" id="result-content" hidden>
+              <div
+                class="result-content"
+                id="result-content"
+                aria-live="polite"
+                hidden
+              >
                 <div class="result-top">
                   <span class="result-id" id="result-id">РАЗБОР 01</span
                   ><span class="human-pill" id="human-pill">Нужен человек</span>
@@ -380,11 +410,7 @@
             <div class="queue-empty" id="queue-empty">
               <span>◌</span> Здесь появятся разобранные обращения
             </div>
-            <div
-              class="queue-list"
-              id="queue-list"
-              aria-label="Список обработанных обращений"
-            ></div>
+            <div class="queue-list" id="queue-list"></div>
           </section>
           <section class="about-section" id="about-section">
             <div>

@@ -60,13 +60,23 @@ function setKind(kind) {
   });
 }
 
-function labelCount(count) {
+function pluralForm(count, one, few, many) {
   const n = count % 100;
   const last = count % 10;
-  if (n >= 11 && n <= 14) return `${count} обращений`;
-  if (last === 1) return `${count} обращение`;
-  if (last >= 2 && last <= 4) return `${count} обращения`;
-  return `${count} обращений`;
+  if (n >= 11 && n <= 14) return many;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function labelCount(count) {
+  return `${count} ${pluralForm(count, "обращение", "обращения", "обращений")}`;
+}
+
+function updateCharacterCount() {
+  const count = $("message").value.length;
+  $("char-count").textContent =
+    `${count} ${pluralForm(count, "символ", "символа", "символов")}`;
 }
 
 function updateCounts() {
@@ -74,11 +84,21 @@ function updateCounts() {
   const human = state.items.filter((item) => item.result.needs_human).length;
   $("stat-total").replaceChildren(document.createTextNode(`${count} `));
   const totalLabel = document.createElement("em");
-  totalLabel.textContent = count === 1 ? "обращение" : "обращений";
+  totalLabel.textContent = pluralForm(
+    count,
+    "обращение",
+    "обращения",
+    "обращений",
+  );
   $("stat-total").append(totalLabel);
   $("stat-human").replaceChildren(document.createTextNode(`${human} `));
   const humanLabel = document.createElement("em");
-  humanLabel.textContent = human === 1 ? "черновик" : "черновиков";
+  humanLabel.textContent = pluralForm(
+    human,
+    "черновик",
+    "черновика",
+    "черновиков",
+  );
   $("stat-human").append(humanLabel);
   $("sidebar-count").textContent = String(count);
   $("queue-total").textContent = labelCount(count);
@@ -154,6 +174,9 @@ function renderResult() {
   $("result-confidence").textContent =
     `Оценка: ${Math.round(result.confidence * 100)}% · эвристика`;
   $("draft-text").value = item.editBuffer;
+  // Screen readers should pronounce the generated draft in the detected language.
+  if (result.lang && result.lang !== "und") $("draft-text").lang = result.lang;
+  else $("draft-text").removeAttribute("lang");
   $("draft-status").textContent =
     item.editBuffer !== result.draft_reply.text
       ? "Есть несохранённая правка"
@@ -255,6 +278,38 @@ async function sendTicket(event) {
   }
 }
 
+function bindNavigation() {
+  const links = [...document.querySelectorAll(".sidebar .nav-link")];
+  const activate = (activeLink) => {
+    links.forEach((link) => {
+      const selected = link === activeLink;
+      link.classList.toggle("active", selected);
+      if (selected) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+  };
+  links.forEach((link) => link.addEventListener("click", () => activate(link)));
+  let ticking = false;
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        let active = links[0];
+        for (const link of links) {
+          const target = document.querySelector(link.getAttribute("href"));
+          if (target && target.getBoundingClientRect().top <= 150)
+            active = link;
+        }
+        activate(active);
+        ticking = false;
+      });
+    },
+    { passive: true },
+  );
+}
+
 function bindEvents() {
   document
     .querySelectorAll(".kind-button")
@@ -268,13 +323,20 @@ function bindEvents() {
       $("message").value = example.text;
       $("attachments").value = example.attachments;
       $("reporter").value = "";
-      $("char-count").textContent = `${example.text.length} символов`;
+      updateCharacterCount();
       $("form-error").textContent = "";
       $("message").focus();
     }),
   );
-  $("message").addEventListener("input", () => {
-    $("char-count").textContent = `${$("message").value.length} символов`;
+  $("message").addEventListener("input", updateCharacterCount);
+  $("clear-form").addEventListener("click", () => {
+    $("message").value = "";
+    $("attachments").value = "0";
+    $("reporter").value = "";
+    $("form-error").textContent = "";
+    setKind("complaint");
+    updateCharacterCount();
+    $("message").focus();
   });
   $("message").addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter")
@@ -336,7 +398,12 @@ async function checkHealth() {
       document.createTextNode(`${health.rules_loaded} `),
     );
     const label = document.createElement("em");
-    label.textContent = "пунктов";
+    label.textContent = pluralForm(
+      health.rules_loaded,
+      "пункт",
+      "пункта",
+      "пунктов",
+    );
     $("stat-rules").append(label);
   } catch (_) {
     $("connection").querySelector("span").textContent = "Нет связи с сервисом";
@@ -344,6 +411,7 @@ async function checkHealth() {
   }
 }
 
+bindNavigation();
 bindEvents();
 updateCounts();
 checkHealth();
