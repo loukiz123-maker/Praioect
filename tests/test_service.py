@@ -34,6 +34,14 @@ class TriageTests(unittest.TestCase):
         for forbidden in ("жалоба одобрена", "получит мут", "по скриншотам видно", "накажем"):
             self.assertNotIn(forbidden, lower)
 
+    def test_draft_separates_greeting_rule_and_review_into_paragraphs(self):
+        result = self.service.triage(ticket("Игрок оскорбил меня в чате"))
+        paragraphs = result["draft_reply"]["text"].split("\n\n")
+        self.assertEqual(paragraphs[0], "Здравствуйте!")
+        self.assertGreaterEqual(len(paragraphs), 3)
+        self.assertIn("пункт", paragraphs[1])
+        self.assertIn("администратор", paragraphs[2])
+
     def test_claimed_rule_is_extracted_but_never_blindly_cited(self):
         result = self.service.triage(ticket("Меня оскорбили, пункт 99.99", rule_refs_raw="99.99"))
         self.assertIn("99.99", result["extracted"]["rule_refs"])

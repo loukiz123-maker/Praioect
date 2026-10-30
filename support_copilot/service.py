@@ -301,7 +301,7 @@ class TriageService:
             "priority": priority,
             "is_spam_or_duplicate": bool(is_spam or is_duplicate),
             "extracted": extracted,
-            "draft_reply": {"lang": reply_lang, "text": " ".join(parts), "cited": cited},
+            "draft_reply": {"lang": reply_lang, "text": "\n\n".join(parts), "cited": cited},
             "needs_human": needs_human,
             "confidence": classification.confidence,
             "reasons": list(dict.fromkeys(reasons)),

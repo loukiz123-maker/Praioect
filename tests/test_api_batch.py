@@ -47,6 +47,9 @@ class ApiTests(unittest.TestCase):
         with urllib.request.urlopen(self.url + "/brand-g.svg", timeout=3) as response:
             self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
             self.assertIn(b"<svg", response.read())
+        with urllib.request.urlopen(self.url + "/favicon.svg", timeout=3) as response:
+            self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
+            self.assertIn(b"<svg", response.read())
         with urllib.request.urlopen(self.url + "/city-banner.jpg", timeout=3) as response:
             self.assertEqual(response.headers.get_content_type(), "image/jpeg")
             self.assertTrue(response.read().startswith(b"\xff\xd8\xff"))

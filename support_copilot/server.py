@@ -21,6 +21,7 @@ ASSETS = {
     "/app.css": "app.css",
     "/app.js": "app.js",
     "/brand-g.svg": "brand-g.svg",
+    "/favicon.svg": "favicon.svg",
     "/city-banner.jpg": "city-banner.jpg",
 }
 

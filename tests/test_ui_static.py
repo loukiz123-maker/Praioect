@@ -42,8 +42,17 @@ class UiMarkupTests(unittest.TestCase):
         for tag, attrs in self.markup.elements:
             if tag == "label" and "for" in attrs:
                 self.assertIn(attrs["for"], ids)
-            for target in attrs.get("aria-labelledby", "").split():
-                self.assertIn(target, ids)
+            for attribute in ("aria-labelledby", "aria-describedby"):
+                for target in attrs.get(attribute, "").split():
+                    self.assertIn(target, ids)
+
+    def test_results_have_accessible_status_and_spam_indicator(self):
+        by_id = {attrs["id"]: attrs for _, attrs in self.markup.elements if "id" in attrs}
+        self.assertEqual(by_id["result-announcement"].get("role"), "status")
+        self.assertIn("hidden", by_id["duplicate-pill"])
+        self.assertIn('$("duplicate-pill").hidden = !result.is_spam_or_duplicate', self.script)
+        self.assertIn('$("result-announcement").textContent', self.script)
+        self.assertIn('$("source-text").textContent = item.text', self.script)
 
     def test_reset_is_a_non_submitting_control(self):
         buttons = [attrs for tag, attrs in self.markup.elements if tag == "button"]

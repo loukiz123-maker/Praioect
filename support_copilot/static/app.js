@@ -105,6 +105,16 @@ function updateCounts() {
   $("queue-empty").hidden = count > 0;
 }
 
+function scrollToResult() {
+  const reducedMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  $("result-heading").scrollIntoView({
+    behavior: reducedMotion ? "auto" : "smooth",
+    block: "start",
+  });
+}
+
 function renderQueue() {
   const container = $("queue-list");
   container.replaceChildren();
@@ -116,10 +126,7 @@ function renderQueue() {
       state.current = item.id;
       renderResult();
       renderQueue();
-      $("result-heading").scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      scrollToResult();
     });
     const number = document.createElement("span");
     number.className = "queue-item-index";
@@ -151,19 +158,31 @@ function currentItem() {
   return state.items.find((item) => item.id === state.current);
 }
 
+function resizeDraft() {
+  const draft = $("draft-text");
+  draft.style.height = "auto";
+  draft.style.height = `${Math.min(draft.scrollHeight + 2, 360)}px`;
+}
+
 function renderResult() {
   const item = currentItem();
   $("empty-state").hidden = Boolean(item);
   $("result-content").hidden = !item;
   if (!item) return;
   const result = item.result;
+  $("source-text").textContent = item.text;
   $("result-id").textContent = `РАЗБОР ${String(item.id).padStart(2, "0")}`;
   $("human-pill").textContent = item.escalated
     ? "Отмечено для проверки"
     : result.needs_human
-      ? "Нужен человек"
+      ? "Нужна проверка человеком"
       : "Можно уточнить";
   $("human-pill").classList.toggle("auto", !result.needs_human);
+  $("duplicate-pill").hidden = !result.is_spam_or_duplicate;
+  $("escalate-button").disabled = item.escalated;
+  $("escalate-label").textContent = item.escalated
+    ? "Отмечено для проверки"
+    : "Отметить для проверки";
   $("result-category").textContent =
     categoryNames[result.category] || result.category;
   $("result-code").textContent = result.category;
@@ -172,8 +191,11 @@ function renderResult() {
   $("result-priority-desc").textContent = priorities[result.priority] || "";
   $("result-language").textContent = languages[result.lang] || result.lang;
   $("result-confidence").textContent =
-    `Оценка: ${Math.round(result.confidence * 100)}% · эвристика`;
+    `Оценка алгоритма: ${Math.round(result.confidence * 100)}% · не точность`;
+  $("result-announcement").textContent =
+    `Разбор ${item.id} готов. Категория: ${categoryNames[result.category] || result.category}. Приоритет: ${priorities[result.priority] || result.priority}. ${result.needs_human ? "Нужна проверка человеком." : "Можно уточнить обращение."}`;
   $("draft-text").value = item.editBuffer;
+  resizeDraft();
   // Screen readers should pronounce the generated draft in the detected language.
   if (result.lang && result.lang !== "und") $("draft-text").lang = result.lang;
   else $("draft-text").removeAttribute("lang");
@@ -199,7 +221,7 @@ function renderResult() {
     citations.append(tag);
   }
   $("result-evidence").textContent = result.extracted.has_evidence
-    ? "Упомянуты или приложены · проверить"
+    ? "Упомянуты или указаны в метаданных. Содержимое не проверено."
     : "Не указаны";
   const reasons = [...result.reasons];
   if (result.is_spam_or_duplicate && !reasons.length)
@@ -212,6 +234,25 @@ function renderResult() {
     $("reason-list").append(li);
   }
   $("result-json").textContent = JSON.stringify(result, null, 2);
+}
+
+function isValidResult(result) {
+  return Boolean(
+    result &&
+      typeof result === "object" &&
+      typeof result.lang === "string" &&
+      typeof result.category === "string" &&
+      ["p0", "p1", "p2", "p3"].includes(result.priority) &&
+      typeof result.is_spam_or_duplicate === "boolean" &&
+      result.extracted &&
+      typeof result.extracted.has_evidence === "boolean" &&
+      result.draft_reply &&
+      typeof result.draft_reply.text === "string" &&
+      Array.isArray(result.draft_reply.cited) &&
+      typeof result.needs_human === "boolean" &&
+      Number.isFinite(result.confidence) &&
+      Array.isArray(result.reasons),
+  );
 }
 
 async function sendTicket(event) {
@@ -247,9 +288,16 @@ async function sendTicket(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
+    let result;
+    try {
+      result = await response.json();
+    } catch (_) {
+      throw new Error("Сервис вернул некорректный ответ. Попробуйте ещё раз.");
+    }
     if (!response.ok)
-      throw new Error(result.error || "Не удалось обработать обращение.");
+      throw new Error(result?.error || "Не удалось обработать обращение.");
+    if (!isValidResult(result))
+      throw new Error("Сервис вернул неполный результат. Попробуйте ещё раз.");
     const item = {
       id: state.items.length + 1,
       text,
@@ -262,14 +310,14 @@ async function sendTicket(event) {
     state.current = item.id;
     renderResult();
     renderQueue();
-    if (window.innerWidth <= 950)
-      $("result-heading").scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+    if (window.innerWidth <= 950) scrollToResult();
   } catch (error) {
+    if (error instanceof TypeError) checkHealth();
     $("form-error").textContent =
-      error.message || "Сервис недоступен. Попробуйте ещё раз.";
+      error instanceof TypeError
+        ? "Не удалось связаться с сервисом. Проверьте, что он запущен."
+        : error.message ||
+          "Не удалось обработать обращение. Попробуйте ещё раз.";
   } finally {
     state.busy = false;
     $("submit-button").disabled = false;
@@ -311,6 +359,13 @@ function bindNavigation() {
 }
 
 function bindEvents() {
+  window.addEventListener(
+    "resize",
+    () => {
+      if (currentItem()) resizeDraft();
+    },
+    { passive: true },
+  );
   document
     .querySelectorAll(".kind-button")
     .forEach((button) =>
@@ -329,6 +384,9 @@ function bindEvents() {
     }),
   );
   $("message").addEventListener("input", updateCharacterCount);
+  $("triage-form").addEventListener("input", () => {
+    $("form-error").textContent = "";
+  });
   $("clear-form").addEventListener("click", () => {
     $("message").value = "";
     $("attachments").value = "0";
@@ -347,6 +405,7 @@ function bindEvents() {
     const item = currentItem();
     if (!item) return;
     item.editBuffer = $("draft-text").value;
+    resizeDraft();
     $("draft-status").textContent =
       item.editBuffer !== item.result.draft_reply.text
         ? "Есть несохранённая правка"
