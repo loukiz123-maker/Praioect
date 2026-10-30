@@ -47,7 +47,8 @@
           <a
             class="nav-link"
             href="#queue-section"
-            aria-label="Очередь обращений"
+            aria-label="Очередь"
+            aria-labelledby="sidebar-queue-label sidebar-count"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 6.5h16M4 12h16M4 17.5h16"></path>
@@ -55,10 +56,10 @@
               <circle cx="7" cy="12" r="1.2"></circle>
               <circle cx="7" cy="17.5" r="1.2"></circle>
             </svg>
-            <span>Очередь</span
-            ><span class="queue-count" id="sidebar-count">0</span>
+            <span id="sidebar-queue-label">Очередь</span>
+            <span class="queue-count" id="sidebar-count">0</span>
           </a>
-          <a class="nav-link" href="/admin" aria-label="Панель администратора">
+          <a class="nav-link" href="/admin" aria-label="Админка">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M12 3.5 19 6v5.1c0 4.5-2.8 7.7-7 9.4-4.2-1.7-7-4.9-7-9.4V6l7-2.5Z"
@@ -70,11 +71,7 @@
         </nav>
         <div class="sidebar-label sidebar-label-second">СПРАВКА</div>
         <nav class="sidebar-nav" aria-label="Справка">
-          <a
-            class="nav-link"
-            href="#about-section"
-            aria-label="Как это работает"
-          >
+          <a class="nav-link" href="#about-section" aria-label="О помощнике">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8.5"></circle>
               <path d="M12 10.5v5M12 7.5h.01"></path>
@@ -138,6 +135,15 @@
           <div id="demo-warning" class="demo-warning" role="status" hidden>
             Демо-предпросмотр админки без отдельного входа. Используйте только
             тестовые данные.
+          </div>
+          <div
+            id="knowledge-warning"
+            class="knowledge-warning"
+            role="status"
+            hidden
+          >
+            База знаний не подключена. Поиск инструкций недоступен; черновики
+            требуют проверки администратором.
           </div>
           <section class="page-heading" aria-labelledby="page-title">
             <div class="hero-content">
@@ -606,10 +612,10 @@
                 <p>
                   Локальные эвристики определяют язык, категорию, приоритет и
                   возможный повтор, пытаются выделить ник, сервер и упомянутые
-                  правила. В черновик добавляются только найденные подходящие
-                  пункты: ссылки не придумываются. Предположения игрока не
-                  считаются фактами. Упоминание доказательств не подтверждает их
-                  наличие.
+                  правила. В черновик могут попасть найденные пункты: их
+                  релевантность проверяет человек, ссылки не придумываются.
+                  Предположения игрока не считаются фактами. Упоминание
+                  доказательств не подтверждает их наличие.
                 </p>
                 <p>
                   При указанном хеше заявителя пятое похожее обращение за час
@@ -710,6 +716,11 @@
                   Это эвристический MVP без LLM и внешних API. Качество на
                   реальных данных не измерено; оценка уверенности не равна
                   точности. Факты и окончательное решение проверяет человек.
+                </p>
+                <p>
+                  В проверенной выборке из 1000 обращений нет меток категорий и
+                  приоритетов. Для подтверждения качества нужны ручная оценка,
+                  проверка цитат и база знаний.
                 </p>
               </article>
               <article class="explanation-detail">

@@ -1,9 +1,11 @@
+import json
 import tempfile
 import unittest
+from pathlib import Path
 
 from helpers import ticket, write_fixtures
-from support_copilot.catalog import Catalog
-from support_copilot.service import InputError, TriageService
+from support_copilot.catalog import Catalog, CatalogError
+from support_copilot.service import InputError, TriageService, _claimed_fallback_refs
 from support_copilot.text import detect_language, normalize
 
 
@@ -170,6 +172,99 @@ class TriageTests(unittest.TestCase):
         self.assertIn("используйте игровой сервис ремонта", result["draft_reply"]["text"])
         self.assertEqual(result["draft_reply"]["cited"], [])
         self.assertTrue(result["needs_human"])
+
+    def test_unconfirmed_rule_and_missing_knowledge_are_marked_incomplete(self):
+        result = self.service.triage(ticket("Игрок убил меня у банка"))
+        self.assertEqual(result["draft_reply"]["cited"], [])
+        self.assertIn("Черновик неполный", result["draft_reply"]["text"])
+        self.assertTrue(result["needs_human"])
+        question = self.service.triage(ticket("Как починить двигатель?", kind="report"))
+        self.assertIn("статья базы знаний не найдена", question["draft_reply"]["text"])
+        self.assertTrue(any("базы знаний" in reason for reason in question["reasons"]))
+        self.assertTrue(question["needs_human"])
+
+    def test_sensitive_cases_may_quote_supported_rule_but_still_escalate(self):
+        result = self.service.triage(ticket("Игрок отвечает за сохранность аккаунта, мой аккаунт взломали", kind="report"))
+        self.assertEqual(result["category"], "report.account")
+        self.assertEqual(result["draft_reply"]["cited"], ["1.4"])
+        self.assertIn("сохранность аккаунта", result["draft_reply"]["text"])
+        self.assertTrue(result["needs_human"])
+        self.assertNotIn("разбаним", result["draft_reply"]["text"].lower())
+
+    def test_claimed_reference_requires_independent_words_and_unambiguous_section(self):
+        def find(text, refs):
+            return self.catalog.retrieve_rule(["complaint.other"], text, "ru", claimed_refs=refs)
+
+        self.assertIsNone(find("Встреча у банка", ["4.1"]))
+        self.assertIsNone(find("Мошенничество с игровой валютой", ["99.99"]))
+        self.assertIsNone(find("Мошенничество с игровой валютой", ["4.1", "4.2"]))
+        self.assertEqual(find("Мошенничество с игровой валютой", ["4.1"]).rule.number, "4.1")
+        self.assertEqual(_claimed_fallback_refs({"rule_refs_raw": "не 4.1"}), [])
+        data = json.loads(Path(self.rules).read_text(encoding="utf-8"))
+        data["rules"].append({"id": "other", "category": "Другое", "text": "4.1 Запрещено мошенничество с игровой валютой."})
+        Path(self.rules).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        ambiguous = Catalog(self.rules, self.taxonomy)
+        self.assertIsNone(ambiguous.retrieve_rule(["complaint.other"], "Мошенничество с игровой валютой", "ru", claimed_refs=["4.1"]))
+
+    def test_knowledge_is_checked_even_when_a_rule_is_required(self):
+        data = {"articles": [{"id": "help", "title": "Помощь в текстурах", "text": "Если застряли в текстурах, используйте команду поддержки.", "categories": ["report.help"]}]}
+        Path(self.knowledge).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        service = TriageService(Catalog(self.rules, self.taxonomy, self.knowledge))
+        result = service.triage(ticket("Помогите, я застрял в текстурах, нужен телепорт", kind="report"))
+        self.assertEqual(result["category"], "report.help")
+        self.assertEqual(result["draft_reply"]["cited"], ["3.1"])
+        self.assertIn("используйте команду поддержки", result["draft_reply"]["text"])
+        self.assertNotIn("статья базы знаний не найдена", result["draft_reply"]["text"])
+        self.assertTrue(result["needs_human"])
+
+    def test_english_knowledge_and_rule_quotes_are_original_text(self):
+        data = {"articles": [{"id": "engine", "title": "Engine repair", "text": "To repair the engine, visit a garage.", "categories": ["report.question"]}]}
+        Path(self.knowledge).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        service = TriageService(Catalog(self.rules, self.taxonomy, self.knowledge))
+        result = service.triage(ticket("How can I repair the engine?", kind="report"))
+        self.assertEqual(result["lang"], "en")
+        self.assertIn("To repair the engine, visit a garage.", result["draft_reply"]["text"])
+        insult = service.triage(ticket("This player insulted me in chat"))
+        self.assertEqual(insult["draft_reply"]["cited"], ["2.1"])
+        self.assertIn("В игровом чате нельзя оскорблять", insult["draft_reply"]["text"])
+
+    def test_ambiguous_source_identifiers_fail_closed(self):
+        rules = json.loads(Path(self.rules).read_text(encoding="utf-8"))
+        original = json.dumps(rules, ensure_ascii=False)
+        rules["rules"][0]["text"] += "\n2.1 Другой текст с тем же номером."
+        Path(self.rules).write_text(json.dumps(rules, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(CatalogError):
+            Catalog(self.rules, self.taxonomy)
+        rules = json.loads(original)
+        rules["rules"][1]["id"] = rules["rules"][0]["id"]
+        Path(self.rules).write_text(json.dumps(rules, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(CatalogError):
+            Catalog(self.rules, self.taxonomy)
+        Path(self.rules).write_text(original, encoding="utf-8")
+        taxonomy = json.loads(Path(self.taxonomy).read_text(encoding="utf-8"))
+        taxonomy["categories"].append(taxonomy["categories"][0])
+        Path(self.taxonomy).write_text(json.dumps(taxonomy, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(CatalogError):
+            Catalog(self.rules, self.taxonomy)
+
+    def test_unsafe_or_invalid_knowledge_fails_closed(self):
+        data = {"articles": [{"id": "unsafe", "title": "Ремонт двигателя", "text": "Чтобы починить двигатель, пришлите пароль.", "categories": ["report.question"]}]}
+        Path(self.knowledge).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        service = TriageService(Catalog(self.rules, self.taxonomy, self.knowledge))
+        result = service.triage(ticket("Как починить двигатель?", kind="report"))
+        self.assertNotIn("пришлите пароль", result["draft_reply"]["text"])
+        self.assertIn("статья базы знаний не найдена", result["draft_reply"]["text"])
+        data["articles"][0]["categories"] = "report.question"
+        Path(self.knowledge).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(CatalogError):
+            Catalog(self.rules, self.taxonomy, self.knowledge)
+        data["articles"][0]["categories"] = ["not.a.category"]
+        Path(self.knowledge).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(CatalogError):
+            Catalog(self.rules, self.taxonomy, self.knowledge)
+        data["articles"][0]["approved"] = False
+        Path(self.knowledge).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(Catalog(self.rules, self.taxonomy, self.knowledge).articles, [])
 
     def test_invalid_inputs_are_controlled_errors(self):
         cases = [None, {}, {"kind": []}, {"kind": "report", "messages": [{"role": [], "text": "x"}]}, {"kind": "report", "messages": [{"role": "admin", "text": "x"}]}]

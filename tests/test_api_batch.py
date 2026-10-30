@@ -41,6 +41,7 @@ class ApiTests(unittest.TestCase):
             health = json.load(response)
         self.assertEqual(health["status"], "ok")
         self.assertGreater(health["rules_loaded"], 0)
+        self.assertEqual(health["knowledge_articles"], 0)
         with urllib.request.urlopen(self.url + "/", timeout=3) as response:
             self.assertIn("Support Copilot", response.read().decode())
             self.assertIn("no-store", response.headers["Cache-Control"])

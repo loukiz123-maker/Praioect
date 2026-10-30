@@ -1035,6 +1035,10 @@ async function checkHealth() {
     $("demo-warning").hidden =
       response.headers.get("X-Admin-Preview") !== "true";
     const degraded = health.status !== "ok";
+    $("knowledge-warning").hidden =
+      degraded ||
+      !Number.isInteger(health.knowledge_articles) ||
+      health.knowledge_articles > 0;
     $("connection").querySelector("span").textContent = degraded
       ? "Авторазбор недоступен"
       : "Сервис работает";
@@ -1042,6 +1046,7 @@ async function checkHealth() {
     state.rulesLoaded = health.rules_loaded;
     renderRuleCount();
   } catch (_) {
+    $("knowledge-warning").hidden = true;
     $("connection").querySelector("span").textContent = "Нет связи с сервисом";
     $("connection").classList.add("offline");
   }

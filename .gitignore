@@ -9,6 +9,11 @@
 /knowledge.json
 *.jsonl
 *.jsonl.gz
+# Валидация иногда поставляется как HTML-обёртка с сырыми JSON-строками.
+[tT]ickets_*.[Hh][Tt][Mm][Ll]
+[tT]ickets_*.[Hh][Tt][Mm]
+[tT]ickets_*.zip
+.copilot-*.tmp
 *.csv
 *.arb
 *.parquet

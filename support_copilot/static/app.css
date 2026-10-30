@@ -89,6 +89,17 @@ summary:focus-visible {
   font-weight: 600;
 }
 
+.knowledge-warning {
+  margin-bottom: 16px;
+  padding: 11px 14px;
+  border: 1px solid #b7b3df;
+  border-radius: 9px;
+  background: #f0effb;
+  color: #332d70;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* Brand and navigation */
 .app-shell {
   display: flex;

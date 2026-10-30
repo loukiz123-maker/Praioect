@@ -139,6 +139,8 @@ class Catalog:
         self.categories: dict[str, dict[str, Any]] = {}
         for item in taxonomy["categories"]:
             if isinstance(item, dict) and isinstance(item.get("code"), str) and item.get("kind") in {"complaint", "report"}:
+                if item["code"] in self.categories:
+                    raise CatalogError("В таксономии повторяется код категории")
                 self.categories[item["code"]] = item
         if not any(c.get("kind") == "complaint" for c in self.categories.values()) or not any(c.get("kind") == "report" for c in self.categories.values()):
             raise CatalogError("Нужна хотя бы одна категория для complaint и report")
@@ -150,11 +152,15 @@ class Catalog:
 
         self.rules: list[Rule] = []
         self.sections: list[tuple[str, str]] = []
+        section_ids: set[str] = set()
         for index, section in enumerate(rules_data["rules"]):
             if not isinstance(section, dict) or not isinstance(section.get("text"), str):
                 continue
             section_id = str(section.get("id", index))
             section_name = str(section.get("category", "Правила"))
+            if section_id in section_ids:
+                raise CatalogError("В правилах повторяется идентификатор раздела")
+            section_ids.add(section_id)
             self.sections.append((section_id, section_name))
             body = section["text"]
             starts = list(RULE_START.finditer(body))
@@ -173,24 +179,36 @@ class Catalog:
         self.complaint_section = next((sid for sid, name in self.sections if "правила жалоб" in normalize(name)), None)
         self.green_section = next((sid for sid, name in self.sections if "зелен" in normalize(name) and "зон" in normalize(name)), None)
         self.by_section_and_number = {(r.section_id, r.number): r for r in self.rules}
-        self.articles = self._load_articles(knowledge_path) if knowledge_path else []
+        if len(self.by_section_and_number) != len(self.rules):
+            raise CatalogError("В одном разделе правил повторяется номер пункта")
+        self.articles = self._load_articles(knowledge_path, set(self.categories)) if knowledge_path else []
 
     @staticmethod
-    def _load_articles(path: str | Path) -> list[Article]:
+    def _load_articles(path: str | Path, valid_categories: set[str]) -> list[Article]:
         data = _load_json(path, "базу знаний")
         entries = data.get("articles") if isinstance(data, dict) else data
         if not isinstance(entries, list):
             raise CatalogError("В базе знаний нужен массив articles")
         articles: list[Article] = []
+        ids: set[str] = set()
         for item in entries:
-            if not isinstance(item, dict) or not isinstance(item.get("text"), str):
+            if not isinstance(item, dict):
+                raise CatalogError("Каждая статья базы знаний должна быть объектом")
+            approved = item.get("approved", True)
+            if not isinstance(approved, bool):
+                raise CatalogError("Поле approved в статье должно быть true или false")
+            if not approved:
                 continue
-            if not item.get("id") or not item.get("title"):
-                continue
+            article_id, title, text = item.get("id"), item.get("title"), item.get("text")
+            if not all(isinstance(value, str) and value.strip() for value in (article_id, title, text)):
+                raise CatalogError("Для статьи базы знаний нужны непустые строки id, title и text")
+            if article_id in ids:
+                raise CatalogError("Идентификаторы статей базы знаний должны быть уникальными")
             categories = item.get("categories", [])
-            if not isinstance(categories, list):
-                categories = []
-            articles.append(Article(str(item["id"]), str(item["title"]), item["text"], tuple(str(c) for c in categories)))
+            if not isinstance(categories, list) or any(not isinstance(c, str) or c not in valid_categories for c in categories):
+                raise CatalogError("Категории статьи должны быть кодами из таксономии")
+            ids.add(article_id)
+            articles.append(Article(article_id, title, text, tuple(categories)))
         return articles
 
     def candidate_rules(self, category_codes: Iterable[str], query: str) -> list[Rule]:
@@ -227,25 +245,54 @@ class Catalog:
                     result[(rule.section_id, rule.number)] = rule
         return list(result.values())
 
-    def retrieve_rule(self, category_codes: Iterable[str], query: str, lang: str) -> RuleMatch | None:
+    def retrieve_rule(
+        self, category_codes: Iterable[str], query: str, lang: str, *,
+        claimed_refs: Iterable[str] = (), strict: bool = False,
+    ) -> RuleMatch | None:
+        """Retrieve an existing, context-matching clause, or fail closed.
+
+        A player's reference can only narrow a fallback search for an otherwise
+        unclassified complaint. It is never evidence of relevance: fallback
+        candidates must independently match two informative words in the
+        player's message. Ties are not resolved by arbitrary section ordering.
+        """
+        codes = tuple(category_codes)
         expanded = _expanded_query(query, lang)
-        query_terms = stems(expanded, lang)
+        direct_terms = stems(query, lang)
+        query_terms = direct_terms if strict else stems(expanded, lang)
         if not query_terms:
             return None
-        matches: list[tuple[int, Rule]] = []
-        for rule in self.candidate_rules(category_codes, expanded):
-            if not _in_scope(rule, expanded):
-                continue
-            overlap = query_terms & stems(rule.excerpt)
-            # Numbers, boilerplate and claimed rule IDs never establish relevance.
-            useful = {term for term in overlap if len(term) >= 5}
-            if useful:
-                matches.append((len(useful), rule))
-        if not matches:
+
+        def score_rules(rules: Iterable[Rule], terms: set[str], minimum: int) -> list[tuple[int, Rule]]:
+            matches: list[tuple[int, Rule]] = []
+            for rule in rules:
+                if not _in_scope(rule, expanded):
+                    continue
+                overlap = terms & stems(rule.excerpt)
+                # Claimed numbers and common boilerplate never establish relevance.
+                useful = {term for term in overlap if len(term) >= 5}
+                if len(useful) >= minimum:
+                    matches.append((len(useful), rule))
+            return matches
+
+        def unique_best(matches: list[tuple[int, Rule]]) -> RuleMatch | None:
+            if not matches:
+                return None
+            score = max(value for value, _ in matches)
+            best = [rule for value, rule in matches if value == score]
+            return RuleMatch(best[0], score) if len(best) == 1 else None
+
+        ordinary = score_rules(self.candidate_rules(codes, expanded), query_terms, 2 if strict else 1)
+        if ordinary:
+            return unique_best(ordinary)
+
+        # Only use an unambiguous reference as an extra search hint for the
+        # broad complaint fallback. It may occur in several rule sections.
+        refs = {str(value) for value in claimed_refs if NUMBER_REF.fullmatch(str(value))}
+        if "complaint.other" not in codes or len(refs) != 1:
             return None
-        # Stable ordering retains the taxonomy's own ordering when scores tie.
-        score, rule = max(matches, key=lambda pair: pair[0])
-        return RuleMatch(rule, score)
+        candidates = (rule for rule in self.rules if rule.number in refs)
+        return unique_best(score_rules(candidates, direct_terms, 2))
 
     def retrieve_article(self, category: str, query: str, lang: str) -> Article | None:
         query_terms = stems(_expanded_query(query, lang), lang)

@@ -1,4 +1,4 @@
-"""Stream JSONL/JSONL.GZ records through the exact same triage pipeline."""
+"""Stream private JSONL or a narrowly supported HTML-wrapped JSONL export."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import gzip
 import json
 import os
+import re
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -17,30 +18,48 @@ from .config import add_data_arguments, make_service
 from .service import InputError, TriageService
 
 
+# Only wrapper-only lines are skipped. JSON lines are never passed through an
+# HTML parser: literal <digits> and <url> strings inside them must stay intact.
+HTML_WRAPPER_LINE = re.compile(
+    r"(?:<!DOCTYPE\s+html\s*>|</?(?:html|head|body|h[1-6]|pre|code)(?:\s+[^<>]*)?\s*>|"
+    r"<meta\s+[^<>]*?/?>|<title>[^<>]*</title>)",
+    re.IGNORECASE,
+)
+
+
 @contextmanager
 def open_input(path: str) -> Iterator[TextIO]:
     if path == "-":
         yield sys.stdin
-    elif path.endswith(".gz"):
-        with gzip.open(path, "rt", encoding="utf-8") as stream:
+    elif path.lower().endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8-sig") as stream:
             yield stream
     else:
-        with open(path, encoding="utf-8") as stream:
+        with open(path, encoding="utf-8-sig") as stream:
             yield stream
 
 
 def iter_tickets(path: str) -> Iterator[tuple[int, dict]]:
+    name = path.lower().removesuffix(".gz")
+    html_wrapped = name.endswith((".html", ".htm"))
+    count = 0
     with open_input(path) as source:
         for line_number, line in enumerate(source, 1):
-            if not line.strip():
+            stripped = line.strip()
+            if not stripped or (html_wrapped and HTML_WRAPPER_LINE.fullmatch(stripped)):
                 continue
+            if html_wrapped and not stripped.startswith("{"):
+                raise InputError(f"Строка {line_number}: неподдерживаемая строка HTML-обёртки")
             try:
                 ticket = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise InputError(f"Строка {line_number}: некорректный JSON") from exc
             if not isinstance(ticket, dict):
                 raise InputError(f"Строка {line_number}: ожидается объект")
+            count += 1
             yield line_number, ticket
+    if html_wrapped and not count:
+        raise InputError("В HTML-обёртке не найдено ни одной JSON-строки")
 
 
 def _write_predictions(service: TriageService, input_path: str, output: TextIO) -> int:
@@ -84,7 +103,7 @@ def predict(service: TriageService, input_path: str, output_path: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Предсказания Support Copilot для JSONL")
     add_data_arguments(parser)
-    parser.add_argument("--in", dest="input_path", required=True, help="Входной .jsonl или .jsonl.gz; - для stdin")
+    parser.add_argument("--in", dest="input_path", required=True, help="Входной .jsonl, .jsonl.gz или простая HTML-обёртка с JSON по строкам; - для stdin")
     parser.add_argument("--out", dest="output_path", required=True, help="Выходной .jsonl или .jsonl.gz; - для stdout")
     args = parser.parse_args()
     try:

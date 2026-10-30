@@ -57,6 +57,9 @@ class UiMarkupTests(unittest.TestCase):
     def test_results_have_accessible_status_and_spam_indicator(self):
         by_id = {attrs["id"]: attrs for _, attrs in self.markup.elements if "id" in attrs}
         self.assertEqual(by_id["result-announcement"].get("role"), "status")
+        self.assertEqual(by_id["knowledge-warning"].get("role"), "status")
+        self.assertIn("hidden", by_id["knowledge-warning"])
+        self.assertIn('health.knowledge_articles', self.script)
         self.assertIn("hidden", by_id["duplicate-pill"])
         self.assertIn('$("duplicate-pill").hidden = !result.is_spam_or_duplicate', self.script)
         self.assertIn('$("result-announcement").textContent', self.script)
@@ -115,6 +118,8 @@ class UiMarkupTests(unittest.TestCase):
             "14 дней после объявления победителей",
             "не переводятся",
             "без LLM и внешних API",
+            "В проверенной выборке из 1000 обращений нет меток категорий и приоритетов",
+            "проверка цитат и база знаний",
             "Автоматического обучения нет",
             "в браузере не шифруются",
         ):

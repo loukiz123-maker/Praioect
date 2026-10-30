@@ -68,6 +68,10 @@ async function send(page, text) {
       sessionStorage.clear();
     });
     await page.reload({ waitUntil: "networkidle0" });
+    if (process.env.EXPECT_MISSING_KNOWLEDGE === "1")
+      await page.waitForFunction(
+        () => !document.querySelector("#knowledge-warning").hidden,
+      );
 
     // The jury explanation must be discoverable and translated in every locale.
     for (const [language, heading, storage] of [
@@ -92,6 +96,20 @@ async function send(page, text) {
       );
       assert.match(await content(page, ".memory-card:nth-child(2)"), /SQLite/);
       assert.match(await content(page, ".memory-card:nth-child(2)"), /14/);
+      const limitation = (await content(
+        page,
+        ".explanation-detail:nth-child(2)",
+      )).replace(/\s+/g, " ");
+      assert.ok(
+        limitation.includes(
+          {
+            ru: "нет меток категорий и приоритетов",
+            en: "no category or priority labels",
+            kk: "санаттары мен басымдықтары белгіленбеген",
+          }[language],
+        ),
+        `The unlabelled validation limitation must be translated to ${language}`,
+      );
     }
     await page.select("#language-switch", "en");
     await page.click(".hero-explainer-link");

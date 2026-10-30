@@ -46,57 +46,69 @@ TEMPLATES = {
         "payment": "Для решения вопроса с платежом необходима проверка администратором. Укажите время операции и способ оплаты, но не передавайте пароль и коды подтверждения.",
         "account": "Для решения вопроса с аккаунтом необходима проверка администратором. Не передавайте никому пароль и коды подтверждения.",
         "ban": "Оспаривание блокировки или наказания требует проверки администратором. Укажите ник, сервер и время блокировки, но не передавайте пароль и коды подтверждения.",
-        "knowledge": "В справочной статье «{title}» указано: «{excerpt}».",
+        "knowledge": "В справочной статье «{title}» указано: «{excerpt}». Это выдержка из исходного материала.",
+        "missing_rule": "Пункт правил не установлен. Черновик неполный: перед отправкой его должен проверить администратор.",
+        "missing_knowledge": "Подходящая статья базы знаний не найдена. Черновик неполный и требует проверки администратором.",
     },
     "kk": {
         "hello": "Сәлеметсіз бе!",
-        "rule": "Сипатталған жағдайға «{section}» бөлімінің {number}-тармағы қатысты болуы мүмкін.",
+        "rule": "Сипатталған жағдайға «{section}» бөлімінің {number}-тармағы қатысты болуы мүмкін. Түпнұсқада: «{excerpt}».",
         "review": "Мән-жайды әкімші тексеруі керек.",
         "clarify": "Мәселені толығырақ сипаттаңыз: не болды, қашан және қай серверде? Растайтын материалдарыңыз болса, оларды тіркеңіз.",
         "payment": "Төлем мәселесін әкімші тексеруі керек. Төлем уақыты мен тәсілін көрсетіңіз, бірақ құпиясөз бен растау кодтарын ешкімге бермеңіз.",
         "account": "Аккаунт мәселесін әкімші тексеруі керек. Құпиясөз бен растау кодтарын ешкімге бермеңіз.",
         "ban": "Бұғаттау немесе жазаға шағымды әкімші тексеруі керек. Никіңізді, серверді және бұғаттау уақытын көрсетіңіз; құпиясөз бен растау кодтарын бермеңіз.",
-        "knowledge": "Анықтамалық материалды әкімші тексеруі керек.",
+        "knowledge": "«{title}» анықтамалық материалындағы түпнұсқа үзінді: «{excerpt}».",
+        "missing_rule": "Қолданылатын ереже анықталмады. Жауап жобасы толық емес: жіберер алдында әкімші тексеруі керек.",
+        "missing_knowledge": "Тиісті анықтамалық мақала табылмады. Жауап жобасы толық емес, әкімші тексеруі керек.",
     },
     "uz": {
         "hello": "Salom!",
-        "rule": "Ta’riflangan holatga «{section}» bo‘limining {number}-bandi tegishli bo‘lishi mumkin.",
+        "rule": "Ta’riflangan holatga «{section}» bo‘limining {number}-bandi tegishli bo‘lishi mumkin. Asl matn: «{excerpt}».",
         "review": "Vaziyatni administrator tekshirishi kerak.",
         "clarify": "Muammoni batafsil yozing: nima, qachon va qaysi serverda sodir bo‘ldi? Tasdiqlovchi materiallar bo‘lsa, ularni ilova qiling.",
         "payment": "To‘lov masalasini administrator tekshirishi kerak. To‘lov vaqti va usulini ko‘rsating, ammo parol va tasdiqlash kodlarini hech kimga bermang.",
         "account": "Akkaunt masalasini administrator tekshirishi kerak. Parol va tasdiqlash kodlarini hech kimga bermang.",
         "ban": "Bloklash yoki jazoga e’tirozni administrator tekshirishi kerak. Nik, server va bloklash vaqtini ko‘rsating; parol va tasdiqlash kodlarini bermang.",
-        "knowledge": "Ma’lumotnoma materialini administrator tekshirishi kerak.",
+        "knowledge": "«{title}» ma’lumotnomasidan asl parcha: «{excerpt}».",
+        "missing_rule": "Tegishli qoida aniqlanmadi. Javob loyihasi to‘liq emas, yuborishdan oldin administrator tekshirishi kerak.",
+        "missing_knowledge": "Tegishli ma’lumotnoma maqolasi topilmadi. Javob loyihasi to‘liq emas, administrator tekshirishi kerak.",
     },
     "en": {
         "hello": "Hello!",
-        "rule": "Section {number} of «{section}» may be relevant to the situation you described.",
+        "rule": "Section {number} of «{section}» may be relevant to the situation you described. Original text: «{excerpt}».",
         "review": "An administrator needs to review the circumstances and any materials provided.",
         "clarify": "Please describe what happened, when, and on which server. Attach any supporting material if available.",
         "payment": "An administrator needs to review the payment issue. Please provide the time and payment method, but never share your password or verification codes.",
         "account": "An administrator needs to review the account issue. Never share your password or verification codes.",
         "ban": "An administrator needs to review an appeal about a ban or penalty. Please provide your nickname, server and the time of the ban; never share your password or verification codes.",
-        "knowledge": "An administrator needs to review the relevant help article.",
+        "knowledge": "Original excerpt from the help article «{title}»: «{excerpt}».",
+        "missing_rule": "The applicable rule has not been established. This draft is incomplete and must be reviewed by an administrator before delivery.",
+        "missing_knowledge": "No relevant knowledge-base article was found. This draft is incomplete and requires an administrator’s review.",
     },
     "es": {
         "hello": "¡Hola!",
-        "rule": "El apartado {number} de «{section}» podría estar relacionado con la situación descrita.",
+        "rule": "El apartado {number} de «{section}» podría estar relacionado con la situación descrita. Texto original: «{excerpt}».",
         "review": "Un administrador debe revisar las circunstancias y los materiales aportados.",
         "clarify": "Describe qué ocurrió, cuándo y en qué servidor. Adjunta pruebas si las tienes.",
         "payment": "Un administrador debe revisar el problema de pago. Indica la hora y el método de pago, pero no compartas tu contraseña ni códigos de verificación.",
         "account": "Un administrador debe revisar el problema de la cuenta. No compartas tu contraseña ni códigos de verificación.",
         "ban": "Un administrador debe revisar la apelación del bloqueo o la sanción. Indica tu nombre, servidor y hora del bloqueo; no compartas tu contraseña ni códigos.",
-        "knowledge": "Un administrador debe revisar el artículo de ayuda correspondiente.",
+        "knowledge": "Fragmento original del artículo «{title}»: «{excerpt}».",
+        "missing_rule": "No se ha identificado la regla aplicable. El borrador está incompleto y un administrador debe revisarlo antes de enviarlo.",
+        "missing_knowledge": "No se encontró un artículo de ayuda pertinente. El borrador está incompleto y requiere revisión de un administrador.",
     },
     "pt": {
         "hello": "Olá!",
-        "rule": "O item {number} de «{section}» pode ser relevante para a situação descrita.",
+        "rule": "O item {number} de «{section}» pode ser relevante para a situação descrita. Texto original: «{excerpt}».",
         "review": "Um administrador precisa analisar as circunstâncias e os materiais apresentados.",
         "clarify": "Descreva o que aconteceu, quando e em qual servidor. Anexe materiais de apoio, se houver.",
         "payment": "Um administrador precisa analisar o problema de pagamento. Informe o horário e a forma de pagamento, mas não compartilhe sua senha ou códigos de verificação.",
         "account": "Um administrador precisa analisar o problema da conta. Não compartilhe sua senha ou códigos de verificação.",
         "ban": "Um administrador precisa analisar o recurso sobre o bloqueio ou a penalidade. Informe seu apelido, servidor e horário do bloqueio; não compartilhe sua senha ou códigos.",
-        "knowledge": "Um administrador precisa analisar o artigo de ajuda pertinente.",
+        "knowledge": "Trecho original do artigo de ajuda «{title}»: «{excerpt}».",
+        "missing_rule": "A regra aplicável não foi identificada. O rascunho está incompleto e deve ser revisado por um administrador antes do envio.",
+        "missing_knowledge": "Nenhum artigo de ajuda relevante foi encontrado. O rascunho está incompleto e precisa da revisão de um administrador.",
     },
 }
 
@@ -183,14 +195,36 @@ def _extract(
 
 
 def _safe_article_excerpt(text: str) -> str | None:
-    # KB entries can contain procedures; do not quote money/ban/punishment
-    # material automatically without an administrator checking it.
-    if re.search(r"(?i)(разбан|забан|накаж|наказан|возврат|верн[её]м|refund|unban|punish|бұғат|қайтар|qaytar)", text):
+    # Unreviewed source material can contain procedures, promises, or requests
+    # for secrets. Fail closed rather than quoting such material automatically.
+    if re.search(
+        r"(?i)(разбан|забан|разблок|блокиров|накаж|наказан|возврат|возмещ|возвращ|верн\w*|компенс|"
+        r"выплат|деньг|восстанов|гарант|обеща|refund|unban|unblock|unlock|punish|\bban\b|banned|money|"
+        r"payment|restore|recover|guarantee|promise|бұғат|қайтар|qaytar|парол|құпиясөз|password|parol|"
+        r"код[аы]?\s+подтвержден|verification\s+code|tasdiqlash\s+kod)",
+        text,
+    ):
         return None
     line = re.sub(r"\s+", " ", text.strip().split("\n", 1)[0]).strip()
     if not line:
         return None
     return line if len(line) <= 340 else line[:337].rsplit(" ", 1)[0] + "…"
+
+
+def requires_rule(catalog: Catalog, kind: str, category: str) -> bool:
+    """Whether the predicted category needs a rule; not a gold relevance label."""
+    return category != "report.offtopic" and (
+        bool(catalog.categories[category].get("rules")) or kind == "complaint" or category == "report.complaint"
+    )
+
+
+def _claimed_fallback_refs(ticket: dict[str, Any]) -> list[str]:
+    raw = ticket.get("rule_refs_raw")
+    if not isinstance(raw, str) or re.search(
+        r"(?i)(?<!\w)(?:не|нет|ошибк\w*|not|wrong|incorrect|емес|жоқ|emas)(?!\w)", raw
+    ):
+        return []
+    return list(dict.fromkeys(RULE_REF_RE.findall(raw)))
 
 
 def validate_ticket(ticket: Any) -> tuple[str, list[dict[str, Any]]]:
@@ -224,22 +258,23 @@ class TriageService:
             text=text, created_at=ticket.get("created_at"), lang=lang,
         )
 
-        category_data = self.catalog.categories[category]
         category_codes = [category]
         if category == "report.complaint" and classification.related_complaint:
             category_codes.append(classification.related_complaint)
-        # An off-topic clarification does not itself require a rule citation.
-        needs_rule = category != "report.offtopic" and (
-            bool(category_data.get("rules")) or kind == "complaint" or category == "report.complaint"
-        )
-        # Sensitive-case templates deliberately defer the legal assessment to a
-        # human. Do not imply that an automatically matched rule settles it.
+        needs_rule = requires_rule(self.catalog, kind, category)
         sensitive_case = bool(classification.signals & {"payment", "compromise", "ban"}) or category in {"report.payment", "report.account"}
-        match: RuleMatch | None = self.catalog.retrieve_rule(category_codes, text, lang) if needs_rule and not sensitive_case else None
-        article = None
-        if not needs_rule and category in {"report.question", "report.help"}:
-            article = self.catalog.retrieve_article(category, text, lang)
-        article_excerpt = _safe_article_excerpt(article.text) if article and reply_lang == "ru" else None
+        # Sensitive cases still go to a human, but an independently supported
+        # source may be shown for review. Require stronger direct-word evidence.
+        match: RuleMatch | None = self.catalog.retrieve_rule(
+            category_codes, text, lang,
+            claimed_refs=_claimed_fallback_refs(ticket), strict=sensitive_case,
+        ) if needs_rule else None
+        article = next((found for code in category_codes if (found := self.catalog.retrieve_article(code, text, lang))), None)
+        article_excerpt = _safe_article_excerpt(article.text) if article else None
+        article_title = _safe_article_excerpt(article.title) if article else None
+        if not article_title:
+            article_excerpt = None
+        needs_knowledge = category in {"report.question", "report.help"}
 
         reasons: list[str] = []
         signals = classification.signals
@@ -259,6 +294,8 @@ class TriageService:
             reasons.append("Игрок упомянул доказательства; их наличие и содержимое не подтверждены.")
         if needs_rule and not match:
             reasons.append("Релевантный пункт правила не подтверждён; черновик не готов к отправке.")
+        if needs_knowledge and not article_excerpt:
+            reasons.append("Подходящая статья базы знаний не подтверждена; черновик требует ручной проверки.")
         if lang == "und":
             reasons.append("Язык не удалось уверенно определить; требуется проверка ответа.")
         if classification.confidence < 0.6:
@@ -280,26 +317,30 @@ class TriageService:
 
         template = TEMPLATES[reply_lang]
         parts = [template["hello"]]
+        risk_template = None
         if "payment" in signals or category == "report.payment":
-            parts.append(template["payment"])
+            risk_template = "payment"
         elif "compromise" in signals or category == "report.account":
-            parts.append(template["account"])
+            risk_template = "account"
         elif "ban" in signals:
-            parts.append(template["ban"])
-        elif match:
+            risk_template = "ban"
+        if risk_template:
+            parts.append(template[risk_template])
+        if match:
             parts.append(template["rule"].format(number=match.rule.number, section=match.rule.section, excerpt=match.rule.excerpt))
-            parts.append(template["review"])
-        elif article_excerpt and article:
-            parts.append(template["knowledge"].format(title=article.title, excerpt=article_excerpt))
-            parts.append(template["review"])
-        else:
+        if article_excerpt and article_title:
+            parts.append(template["knowledge"].format(title=article_title, excerpt=article_excerpt))
+        if not risk_template:
             parts.append(template["clarify"] if category == "report.offtopic" else template["review"])
-            if needs_rule and not extracted["has_evidence"]:
+            if needs_rule and not match and not extracted["has_evidence"]:
                 parts.append(template["clarify"])
+        if needs_rule and not match:
+            parts.append(template["missing_rule"])
+        if needs_knowledge and not article_excerpt:
+            parts.append(template["missing_knowledge"])
 
-        # Only list a rule that is actually mentioned in the resulting reply.
-        used_rule = match is not None and not ({"payment", "compromise", "ban"} & signals) and category not in {"report.payment", "report.account"}
-        cited = [match.rule.number] if used_rule and match else []
+        # Only list an existing rule explicitly quoted in this draft.
+        cited = [match.rule.number] if match else []
         return {
             "lang": lang,
             "category": category,
