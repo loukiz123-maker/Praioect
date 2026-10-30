@@ -78,6 +78,17 @@ summary:focus-visible {
   transform: translateY(0);
 }
 
+.demo-warning {
+  margin-bottom: 16px;
+  padding: 11px 14px;
+  border: 1px solid #bdc9e0;
+  border-radius: 9px;
+  background: #edf2fa;
+  color: #344d70;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* Brand and navigation */
 .app-shell {
   display: flex;
@@ -1256,6 +1267,97 @@ fieldset.field-block {
   font-size: 12px;
   line-height: 1.4;
 }
+.failure-note {
+  margin-top: 18px;
+  padding: 13px;
+  border: 1px solid #e9cdd3;
+  border-radius: 8px;
+  background: #fdf5f6;
+  color: #833b47;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.failure-note p {
+  margin: 5px 0 0;
+  color: #6e4b54;
+}
+.handoff-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ebf1;
+}
+.handoff-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #344054;
+  font-size: 13px;
+}
+.handoff-heading > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #eeedfa;
+  color: #5e58a8;
+  font-size: 12px;
+  font-weight: 800;
+}
+.handoff-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #51499d;
+  font-size: 12px;
+  font-weight: 700;
+}
+.handoff-link:hover {
+  text-decoration: underline;
+}
+.handoff-state,
+.handoff-hint {
+  margin: 8px 0 10px;
+  color: #566477;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.handoff-state.is-error {
+  color: #a03945;
+  font-weight: 650;
+}
+.handoff-hint {
+  margin: 8px 0 0;
+}
+.handoff-hint:empty {
+  display: none;
+}
+.admin-answer-box {
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid #cfe3d8;
+  border-radius: 9px;
+  background: #f4faf6;
+}
+.admin-answer-box label {
+  display: block;
+  margin-bottom: 8px;
+  color: #345d46;
+  font-size: 13px;
+  font-weight: 750;
+}
+.admin-answer-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 10px;
+  border: 1px solid #d1dfd7;
+  border-radius: 7px;
+  background: #fff;
+  color: #293d32;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
 .json-details {
   margin-top: 15px;
   padding-top: 13px;
@@ -1689,7 +1791,8 @@ fieldset.field-block {
   /* A 16px field size avoids automatic zoom when focusing inputs on iOS. */
   .field-block textarea,
   .field-block input,
-  #draft-text {
+  #draft-text,
+  #admin-answer {
     font-size: 16px;
   }
   .keyboard-hint {
@@ -1754,6 +1857,25 @@ fieldset.field-block {
 @media (max-width: 410px) {
   .avatar {
     display: none;
+  }
+}
+@media (max-width: 370px) {
+  .sidebar {
+    gap: 3px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+  .sidebar-nav {
+    gap: 1px;
+  }
+  .nav-link {
+    min-width: 32px;
+    padding-right: 5px;
+    padding-left: 5px;
+  }
+  .nav-link svg {
+    width: 16px;
+    height: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

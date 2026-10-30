@@ -57,6 +57,21 @@
             <span>Очередь</span
             ><span class="queue-count" id="sidebar-count">0</span>
           </a>
+          <a
+            class="nav-link"
+            href="/admin"
+            target="_blank"
+            rel="noopener"
+            aria-label="Панель администратора (откроется в новой вкладке)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 3.5 19 6v5.1c0 4.5-2.8 7.7-7 9.4-4.2-1.7-7-4.9-7-9.4V6l7-2.5Z"
+              ></path>
+              <path d="m9 12 2 2 4-4"></path>
+            </svg>
+            <span>Админка</span>
+          </a>
         </nav>
         <div class="sidebar-label sidebar-label-second">СПРАВКА</div>
         <nav class="sidebar-nav" aria-label="Справка">
@@ -109,6 +124,10 @@
         </header>
 
         <div class="page-content">
+          <div id="demo-warning" class="demo-warning" role="status" hidden>
+            Демо-предпросмотр админки без отдельного входа. Используйте только
+            тестовые данные.
+          </div>
           <section class="page-heading" aria-labelledby="page-title">
             <div class="hero-content">
               <div class="eyebrow">
@@ -300,8 +319,8 @@
               <div class="privacy-note">
                 <span class="shield" aria-hidden="true">✓</span
                 ><span
-                  >Данные обрабатываются на этом сервере и не отправляются во
-                  внешние API.</span
+                  >Обращения для проверки сохраняются на этом сервере; во
+                  внешние API данные не отправляются.</span
                 >
               </div>
             </section>
@@ -426,23 +445,77 @@
                   </div>
                   <ul id="reason-list"></ul>
                 </div>
-                <div class="result-actions">
-                  <button
-                    type="button"
-                    class="outline-button"
-                    id="escalate-button"
-                  >
-                    <span id="escalate-label">Отметить для проверки</span>
-                    <span aria-hidden="true">→</span></button
-                  ><span>Только в этом окне, без отправки</span>
+              </div>
+              <div id="failure-content" class="failure-content" hidden>
+                <div class="failure-note">
+                  <strong>Автоматический разбор не выполнен</strong>
+                  <p>
+                    Категория, приоритет и черновик не определены. Обращение
+                    может проверить администратор вручную.
+                  </p>
                 </div>
-                <details class="json-details">
+                <details class="source-details">
                   <summary>
-                    Посмотреть JSON ответа <span aria-hidden="true">⌄</span>
+                    Текст обращения <span aria-hidden="true">⌄</span>
                   </summary>
-                  <pre id="result-json"></pre>
+                  <p id="failure-source-text"></p>
                 </details>
               </div>
+              <div id="review-section" class="handoff-section" hidden>
+                <div class="handoff-heading">
+                  <span aria-hidden="true">✓</span
+                  ><strong>Проверка администратором</strong>
+                </div>
+                <a
+                  class="handoff-link"
+                  href="/admin"
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Открыть админку в новой вкладке"
+                  >Открыть админку ↗</a
+                >
+                <p id="handoff-state" class="handoff-state" role="status"></p>
+                <button
+                  type="button"
+                  class="outline-button"
+                  id="escalate-button"
+                >
+                  <span id="escalate-label">Отправить администратору</span
+                  ><span aria-hidden="true">→</span>
+                </button>
+                <p id="handoff-hint" class="handoff-hint"></p>
+                <div id="admin-answer-box" class="admin-answer-box" hidden>
+                  <label for="admin-answer">Ответ администратора</label>
+                  <textarea id="admin-answer" rows="5" readonly></textarea>
+                  <div class="draft-actions">
+                    <button
+                      type="button"
+                      class="secondary-button"
+                      id="use-admin-answer"
+                    >
+                      Использовать в черновике
+                    </button>
+                    <button
+                      type="button"
+                      class="text-button"
+                      id="copy-admin-answer"
+                    >
+                      Копировать ответ
+                    </button>
+                    <span
+                      id="admin-answer-status"
+                      class="draft-status"
+                      role="status"
+                    ></span>
+                  </div>
+                </div>
+              </div>
+              <details class="json-details" id="json-wrapper" hidden>
+                <summary>
+                  Посмотреть JSON ответа <span aria-hidden="true">⌄</span>
+                </summary>
+                <pre id="result-json"></pre>
+              </details>
             </section>
           </div>
 
@@ -456,8 +529,9 @@
                 <div class="section-kicker"><span>03</span> ТЕКУЩАЯ СЕССИЯ</div>
                 <h2 id="queue-heading">Очередь обращений</h2>
                 <p>
-                  Результаты сохраняются только до обновления или закрытия
-                  страницы.
+                  Эта очередь и получение ответа доступны до обновления или
+                  закрытия страницы. Переданные администратору обращения
+                  хранятся на сервере.
                 </p>
               </div>
               <span class="queue-total" id="queue-total">0 обращений</span>

@@ -13,8 +13,13 @@
 *.arb
 *.parquet
 *.sqlite
+*.sqlite-*
 *.sqlite3
+*.sqlite3-*
 *.db
+*.db-*
+*.key
+*.pem
 
 # Python / editor artifacts
 __pycache__/

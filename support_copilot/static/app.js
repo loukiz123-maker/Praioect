@@ -50,6 +50,7 @@ const examples = {
     attachments: 1,
   },
 };
+const QUEUED_STATUSES = new Set(["waiting", "in_progress", "resolved"]);
 
 function setKind(kind) {
   state.kind = kind;
@@ -81,7 +82,11 @@ function updateCharacterCount() {
 
 function updateCounts() {
   const count = state.items.length;
-  const human = state.items.filter((item) => item.result.needs_human).length;
+  const human = state.items.filter(
+    (item) =>
+      item.reviewStatus !== "resolved" &&
+      (!item.result || item.result.needs_human || item.manualRequested),
+  ).length;
   $("stat-total").replaceChildren(document.createTextNode(`${count} `));
   const totalLabel = document.createElement("em");
   totalLabel.textContent = pluralForm(
@@ -95,9 +100,9 @@ function updateCounts() {
   const humanLabel = document.createElement("em");
   humanLabel.textContent = pluralForm(
     human,
-    "черновик",
-    "черновика",
-    "черновиков",
+    "обращение",
+    "обращения",
+    "обращений",
   );
   $("stat-human").append(humanLabel);
   $("sidebar-count").textContent = String(count);
@@ -113,6 +118,15 @@ function scrollToResult() {
     behavior: reducedMotion ? "auto" : "smooth",
     block: "start",
   });
+}
+
+function queueLabel(item) {
+  if (item.reviewStatus === "resolved") return "Ответ готов";
+  if (item.reviewStatus === "in_progress") return "В работе";
+  if (item.reviewStatus === "waiting") return "У администратора";
+  if (item.reviewStatus === "not_sent" || item.reviewStatus === "not_found")
+    return "Нет подтверждения";
+  return "Можно уточнить";
 }
 
 function renderQueue() {
@@ -136,15 +150,13 @@ function renderQueue() {
     const title = document.createElement("strong");
     title.textContent = item.text;
     const subtitle = document.createElement("small");
-    subtitle.textContent = `${categoryNames[item.result.category] || item.result.category} · ${item.result.priority.toUpperCase()}`;
+    subtitle.textContent = item.result
+      ? `${categoryNames[item.result.category] || item.result.category} · ${item.result.priority.toUpperCase()}`
+      : "Автоматический разбор не выполнен";
     copy.append(title, subtitle);
     const status = document.createElement("span");
-    status.className = `queue-item-state${item.result.needs_human ? "" : " auto"}`;
-    status.textContent = item.escalated
-      ? "Отмечено для проверки"
-      : item.result.needs_human
-        ? "Нужна проверка"
-        : "Можно уточнить";
+    status.className = `queue-item-state${item.reviewStatus === "resolved" || item.reviewStatus === "not_required" ? " auto" : ""}`;
+    status.textContent = queueLabel(item);
     const arrow = document.createElement("span");
     arrow.className = "queue-item-arrow";
     arrow.textContent = "↗";
@@ -164,25 +176,103 @@ function resizeDraft() {
   draft.style.height = `${Math.min(draft.scrollHeight + 2, 360)}px`;
 }
 
+function renderHandoff(item) {
+  if (!item) return;
+  let message = "Обращение ещё не передано администратору.";
+  let hint = "Если заметили ошибку, отправьте обращение на ручную проверку.";
+  let label = "Отправить администратору";
+  let disabled = false;
+  if (item.reviewStatus === "waiting" || item.reviewStatus === "in_progress") {
+    message =
+      item.reviewStatus === "waiting"
+        ? "Обращение в очереди администратора. Ожидает проверки."
+        : "Администратор взял обращение в работу.";
+    hint =
+      "Ответ появится здесь, пока страница открыта. Игроку он автоматически не отправляется.";
+    if (item.result && item.editBuffer !== item.sentDraft) {
+      label = "Передать правку администратору";
+    } else {
+      label = "Передано администратору";
+      disabled = true;
+    }
+  } else if (item.reviewStatus === "resolved") {
+    message = "Администратор подготовил ответ.";
+    hint = "Проверьте текст. Автоматической отправки игроку нет.";
+    label = "Проверка завершена";
+    disabled = true;
+  } else if (item.reviewStatus === "not_sent") {
+    message = "Не удалось подтвердить передачу администратору.";
+    hint =
+      "Проверьте сервер и очередь администратора либо повторите отправку. Без подтверждения не считайте обращение доставленным.";
+    label = "Повторить отправку";
+  } else if (item.reviewStatus === "not_found") {
+    message = "Запись проверки больше недоступна.";
+    hint =
+      "Возможно, её удалили или истёк срок хранения. При необходимости отправьте обращение повторно.";
+    label = "Отправить повторно";
+  }
+  if (item.reviewError) message = item.reviewError;
+  else if (item.pollError && QUEUED_STATUSES.has(item.reviewStatus)) {
+    hint =
+      "Не удалось обновить статус. Проверьте соединение; последнее подтверждённое состояние показано выше.";
+  }
+  if (item.reviewPending) {
+    label = "Отправляем…";
+    disabled = true;
+  }
+  $("handoff-state").textContent = message;
+  $("handoff-state").classList.toggle(
+    "is-error",
+    Boolean(item.reviewError) ||
+      item.reviewStatus === "not_sent" ||
+      item.reviewStatus === "not_found",
+  );
+  $("handoff-hint").textContent = hint;
+  $("escalate-button").disabled = disabled;
+  $("escalate-label").textContent = label;
+  $("admin-answer-box").hidden =
+    item.reviewStatus !== "resolved" || typeof item.adminReply !== "string";
+  $("use-admin-answer").hidden = !item.result;
+  if (
+    typeof item.adminReply === "string" &&
+    $("admin-answer").value !== item.adminReply
+  ) {
+    $("admin-answer").value = item.adminReply;
+    $("admin-answer-status").textContent = "";
+  }
+  if (item.result) {
+    $("human-pill").textContent =
+      item.reviewStatus === "resolved"
+        ? "Ответ администратора готов"
+        : item.result.needs_human || item.manualRequested
+          ? "Нужна проверка человеком"
+          : "Можно уточнить";
+    $("human-pill").classList.toggle(
+      "auto",
+      !item.result.needs_human && !item.manualRequested,
+    );
+  }
+}
+
 function renderResult() {
   const item = currentItem();
   $("empty-state").hidden = Boolean(item);
-  $("result-content").hidden = !item;
+  $("result-content").hidden = !item?.result;
+  $("failure-content").hidden = !item || Boolean(item.result);
+  $("review-section").hidden = !item;
+  $("json-wrapper").hidden = !item?.result;
   if (!item) return;
+  if (!item.result) {
+    $("failure-source-text").textContent = item.text;
+    $("result-announcement").textContent =
+      `Обращение ${item.id}: автоматический разбор не выполнен. Проверьте состояние передачи администратору.`;
+    renderHandoff(item);
+    return;
+  }
   const result = item.result;
   $("source-text").textContent = item.text;
   $("result-id").textContent = `РАЗБОР ${String(item.id).padStart(2, "0")}`;
-  $("human-pill").textContent = item.escalated
-    ? "Отмечено для проверки"
-    : result.needs_human
-      ? "Нужна проверка человеком"
-      : "Можно уточнить";
-  $("human-pill").classList.toggle("auto", !result.needs_human);
   $("duplicate-pill").hidden = !result.is_spam_or_duplicate;
-  $("escalate-button").disabled = item.escalated;
-  $("escalate-label").textContent = item.escalated
-    ? "Отмечено для проверки"
-    : "Отметить для проверки";
   $("result-category").textContent =
     categoryNames[result.category] || result.category;
   $("result-code").textContent = result.category;
@@ -196,7 +286,6 @@ function renderResult() {
     `Разбор ${item.id} готов. Категория: ${categoryNames[result.category] || result.category}. Приоритет: ${priorities[result.priority] || result.priority}. ${result.needs_human ? "Нужна проверка человеком." : "Можно уточнить обращение."}`;
   $("draft-text").value = item.editBuffer;
   resizeDraft();
-  // Screen readers should pronounce the generated draft in the detected language.
   if (result.lang && result.lang !== "und") $("draft-text").lang = result.lang;
   else $("draft-text").removeAttribute("lang");
   $("draft-status").textContent =
@@ -207,9 +296,8 @@ function renderResult() {
         : "";
   const citations = $("citation-list");
   citations.replaceChildren();
-  const cited = result.draft_reply.cited;
-  if (cited.length) {
-    for (const citation of cited) {
+  if (result.draft_reply.cited.length) {
+    for (const citation of result.draft_reply.cited) {
       const tag = document.createElement("span");
       tag.textContent = citation;
       citations.append(tag);
@@ -234,6 +322,7 @@ function renderResult() {
     $("reason-list").append(li);
   }
   $("result-json").textContent = JSON.stringify(result, null, 2);
+  renderHandoff(item);
 }
 
 function isValidResult(result) {
@@ -255,6 +344,79 @@ function isValidResult(result) {
   );
 }
 
+function makeReceipt() {
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
+    "",
+  );
+}
+
+async function fetchWithTimeout(url, options, milliseconds = 8000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), milliseconds);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function requestReview(item, source) {
+  const body = { ticket: item.payload, source };
+  const draftAtSend = item.editBuffer;
+  if (source === "manual" && item.originalResult) {
+    body.result = item.originalResult;
+    body.draft = draftAtSend;
+  }
+  const response = await fetchWithTimeout(
+    "/reviews/request",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Review-Receipt": item.receipt,
+      },
+      body: JSON.stringify(body),
+    },
+    5000,
+  );
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    throw new Error("Сервис вернул некорректный ответ.");
+  }
+  if (!response.ok) {
+    const error = new Error(data?.error || "Не удалось передать обращение.");
+    error.status = response.status;
+    throw error;
+  }
+  if (!QUEUED_STATUSES.has(data.status))
+    throw new Error("Не удалось подтвердить передачу обращения.");
+  item.reviewStatus = data.status;
+  item.sentDraft = item.result ? draftAtSend : "";
+  item.reviewError = "";
+  item.pollError = false;
+}
+
+function hasQueuedResponse(response) {
+  const receipt = response?.headers.get("X-Review-Receipt");
+  return (
+    response?.headers.get("X-Review-Status") === "queued" &&
+    typeof receipt === "string" &&
+    /^[0-9a-f]{64}$/.test(receipt)
+  );
+}
+
+function addItem(item) {
+  state.items.push(item);
+  state.current = item.id;
+  renderResult();
+  renderQueue();
+  if (window.innerWidth <= 950) scrollToResult();
+}
+
 async function sendTicket(event) {
   event.preventDefault();
   if (state.busy) return;
@@ -272,52 +434,102 @@ async function sendTicket(event) {
     $("attachments").focus();
     return;
   }
+  let receipt;
+  try {
+    receipt = makeReceipt();
+  } catch (_) {
+    $("form-error").textContent =
+      "Браузер не поддерживает безопасную передачу. Обновите браузер.";
+    return;
+  }
   const payload = {
     kind: state.kind,
     messages: [{ role: "player", text, attachments: amount }],
   };
   const reporter = $("reporter").value.trim();
   if (reporter) payload.reporter_hash = reporter;
+  const item = {
+    id: state.items.length + 1,
+    text,
+    payload,
+    receipt,
+    result: null,
+    originalResult: null,
+    editBuffer: "",
+    edited: false,
+    manualRequested: false,
+    sentDraft: "",
+    reviewStatus: "not_sent",
+    reviewError: "",
+    reviewErrorKind: null,
+    pollError: false,
+    reviewPending: false,
+    adminReply: null,
+    polling: false,
+  };
   state.busy = true;
   $("submit-button").disabled = true;
   $("submit-button").querySelector("span:nth-child(2)").textContent =
     "Разбираем…";
+  let response = null;
   try {
-    const response = await fetch("/triage", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    let result;
+    let result = null;
     try {
-      result = await response.json();
+      response = await fetchWithTimeout("/triage", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Review-Receipt": receipt,
+        },
+        body: JSON.stringify(payload),
+      });
+      try {
+        result = await response.json();
+      } catch (_) {
+        result = null;
+      }
+      if (
+        !response.ok &&
+        response.status < 500 &&
+        ![408, 429].includes(response.status)
+      ) {
+        $("form-error").textContent =
+          result?.error || "Не удалось обработать обращение.";
+        return;
+      }
     } catch (_) {
-      throw new Error("Сервис вернул некорректный ответ. Попробуйте ещё раз.");
+      checkHealth();
     }
-    if (!response.ok)
-      throw new Error(result?.error || "Не удалось обработать обращение.");
-    if (!isValidResult(result))
-      throw new Error("Сервис вернул неполный результат. Попробуйте ещё раз.");
-    const item = {
-      id: state.items.length + 1,
-      text,
-      result,
-      editBuffer: result.draft_reply.text,
-      edited: false,
-      escalated: false,
-    };
-    state.items.push(item);
-    state.current = item.id;
-    renderResult();
-    renderQueue();
-    if (window.innerWidth <= 950) scrollToResult();
-  } catch (error) {
-    if (error instanceof TypeError) checkHealth();
+    if (response?.ok && isValidResult(result)) {
+      item.result = result;
+      item.originalResult = JSON.parse(JSON.stringify(result));
+      item.editBuffer = result.draft_reply.text;
+      item.sentDraft = item.editBuffer;
+      if (hasQueuedResponse(response)) {
+        item.receipt = response.headers.get("X-Review-Receipt");
+        item.reviewStatus = "waiting";
+      } else {
+        item.reviewStatus = result.needs_human ? "not_sent" : "not_required";
+      }
+      addItem(item);
+      if (item.reviewStatus === "waiting") refreshReview(item);
+      return;
+    }
+    // If the processor broke or returned malformed data, submit independently.
+    if (hasQueuedResponse(response)) {
+      item.receipt = response.headers.get("X-Review-Receipt");
+      item.reviewStatus = "waiting";
+    } else {
+      try {
+        await requestReview(item, "failure");
+      } catch (_) {
+        item.reviewStatus = "not_sent";
+      }
+    }
     $("form-error").textContent =
-      error instanceof TypeError
-        ? "Не удалось связаться с сервисом. Проверьте, что он запущен."
-        : error.message ||
-          "Не удалось обработать обращение. Попробуйте ещё раз.";
+      "Автоматический разбор не выполнен. Проверьте состояние обращения в блоке результата.";
+    addItem(item);
+    if (QUEUED_STATUSES.has(item.reviewStatus)) refreshReview(item);
   } finally {
     state.busy = false;
     $("submit-button").disabled = false;
@@ -326,16 +538,109 @@ async function sendTicket(event) {
   }
 }
 
+async function refreshReview(item, { force = false } = {}) {
+  if ((!force && !QUEUED_STATUSES.has(item.reviewStatus)) || item.polling)
+    return;
+  item.polling = true;
+  try {
+    const response = await fetchWithTimeout(
+      "/reviews/status",
+      {
+        headers: { "X-Review-Receipt": item.receipt },
+        cache: "no-store",
+      },
+      5000,
+    );
+    if (response.status === 404) {
+      item.reviewStatus = "not_found";
+      item.adminReply = null;
+      item.pollError = false;
+      if (item.reviewErrorKind)
+        item.reviewError =
+          "Запись проверки больше недоступна. Правка осталась в этом окне; при необходимости отправьте обращение повторно.";
+    } else {
+      if (!response.ok) throw new Error("status unavailable");
+      const data = await response.json();
+      if (
+        !QUEUED_STATUSES.has(data.status) ||
+        (data.status === "resolved" && typeof data.reply !== "string")
+      )
+        throw new Error("invalid status");
+      const wasResolved = item.reviewStatus === "resolved";
+      item.reviewStatus = data.status;
+      item.adminReply = data.status === "resolved" ? data.reply : null;
+      item.pollError = false;
+      if (data.status === "resolved" && item.reviewErrorKind === "conflict")
+        item.reviewError =
+          "Администратор подготовил ответ. Последняя правка не была передана и осталась в черновике.";
+      else if (
+        data.status === "resolved" &&
+        item.reviewErrorKind === "uncertain"
+      )
+        item.reviewError =
+          "Администратор подготовил ответ. Передачу последней правки подтвердить не удалось; сравните тексты.";
+      if (
+        !wasResolved &&
+        data.status === "resolved" &&
+        currentItem() === item
+      ) {
+        $("result-announcement").textContent =
+          `Администратор подготовил ответ на обращение ${item.id}.`;
+      }
+    }
+  } catch (_) {
+    item.pollError = true;
+  } finally {
+    item.polling = false;
+    if (currentItem() === item) renderHandoff(item);
+    renderQueue();
+  }
+}
+
+async function handoffCurrent() {
+  const item = currentItem();
+  if (!item || item.reviewPending) return;
+  const wasQueued = QUEUED_STATUSES.has(item.reviewStatus);
+  item.reviewPending = true;
+  item.reviewError = "";
+  item.reviewErrorKind = null;
+  renderHandoff(item);
+  try {
+    await requestReview(item, item.result ? "manual" : "failure");
+    item.manualRequested = true;
+    if (item.result) {
+      item.result.needs_human = true;
+      if (!item.result.reasons.includes("Оператор запросил ручную проверку."))
+        item.result.reasons.push("Оператор запросил ручную проверку.");
+      if (currentItem() === item)
+        $("result-json").textContent = JSON.stringify(item.result, null, 2);
+    }
+    if (item.reviewStatus === "resolved") await refreshReview(item);
+  } catch (error) {
+    item.reviewErrorKind = error.status === 409 ? "conflict" : "uncertain";
+    item.reviewError = wasQueued
+      ? "Не удалось подтвердить обновление правки. Проверьте состояние обращения; текст остался в этом окне."
+      : "Не удалось подтвердить передачу. Проверьте сервер и повторите отправку.";
+    if (!wasQueued) item.reviewStatus = "not_sent";
+    if (error.status === 409) await refreshReview(item, { force: true });
+    if (error.name === "AbortError" || error instanceof TypeError)
+      checkHealth();
+  } finally {
+    item.reviewPending = false;
+    if (currentItem() === item) renderHandoff(item);
+    renderQueue();
+  }
+}
+
 function bindNavigation() {
-  const links = [...document.querySelectorAll(".sidebar .nav-link")];
-  const activate = (activeLink) => {
+  const links = [...document.querySelectorAll('.sidebar .nav-link[href^="#"]')];
+  const activate = (activeLink) =>
     links.forEach((link) => {
       const selected = link === activeLink;
       link.classList.toggle("active", selected);
       if (selected) link.setAttribute("aria-current", "location");
       else link.removeAttribute("aria-current");
     });
-  };
   links.forEach((link) => link.addEventListener("click", () => activate(link)));
   let ticking = false;
   window.addEventListener(
@@ -358,11 +663,22 @@ function bindNavigation() {
   );
 }
 
+async function copyText(element, status) {
+  try {
+    await navigator.clipboard.writeText(element.value);
+    status.textContent = "Текст скопирован";
+  } catch (_) {
+    element.focus();
+    element.select();
+    status.textContent = "Текст выделен — скопируйте его";
+  }
+}
+
 function bindEvents() {
   window.addEventListener(
     "resize",
     () => {
-      if (currentItem()) resizeDraft();
+      if (currentItem()?.result) resizeDraft();
     },
     { passive: true },
   );
@@ -403,47 +719,46 @@ function bindEvents() {
   $("triage-form").addEventListener("submit", sendTicket);
   $("draft-text").addEventListener("input", () => {
     const item = currentItem();
-    if (!item) return;
+    if (!item?.result) return;
     item.editBuffer = $("draft-text").value;
     resizeDraft();
     $("draft-status").textContent =
       item.editBuffer !== item.result.draft_reply.text
         ? "Есть несохранённая правка"
         : "";
+    renderHandoff(item);
   });
   $("save-draft").addEventListener("click", () => {
     const item = currentItem();
-    if (!item) return;
+    if (!item?.result) return;
     item.result.draft_reply.text = item.editBuffer;
     item.edited = true;
-    $("draft-status").textContent = "Правка сохранена в окне";
+    $("draft-status").textContent = "Правка сохранена только в этом окне";
     $("result-json").textContent = JSON.stringify(item.result, null, 2);
   });
-  $("copy-draft").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText($("draft-text").value);
-      $("draft-status").textContent = "Текст скопирован";
-    } catch (_) {
-      $("draft-text").focus();
-      $("draft-text").select();
-      $("draft-status").textContent = "Текст выделен — скопируйте его";
-    }
-  });
-  $("escalate-button").addEventListener("click", () => {
+  $("copy-draft").addEventListener("click", () =>
+    copyText($("draft-text"), $("draft-status")),
+  );
+  $("escalate-button").addEventListener("click", handoffCurrent);
+  $("use-admin-answer").addEventListener("click", () => {
     const item = currentItem();
-    if (!item) return;
-    item.escalated = true;
-    item.result.needs_human = true;
-    if (
-      !item.result.reasons.includes(
-        "Отмечено для проверки вручную в интерфейсе.",
-      )
-    )
-      item.result.reasons.push("Отмечено для проверки вручную в интерфейсе.");
-    renderResult();
-    renderQueue();
-    $("draft-status").textContent = "Отмечено в текущей сессии; отправки нет";
+    if (!item?.result || typeof item.adminReply !== "string") return;
+    item.editBuffer = item.adminReply;
+    $("draft-text").value = item.adminReply;
+    resizeDraft();
+    $("draft-status").textContent =
+      "Ответ администратора вставлен; проверьте и сохраните правку в окне";
+    $("draft-text").focus();
   });
+  $("copy-admin-answer").addEventListener("click", () =>
+    copyText($("admin-answer"), $("admin-answer-status")),
+  );
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) state.items.forEach((item) => refreshReview(item));
+  });
+  window.setInterval(() => {
+    if (!document.hidden) state.items.forEach((item) => refreshReview(item));
+  }, 5000);
 }
 
 async function checkHealth() {
@@ -451,8 +766,13 @@ async function checkHealth() {
     const response = await fetch("/health", { cache: "no-store" });
     if (!response.ok) throw new Error("offline");
     const health = await response.json();
-    $("connection").querySelector("span").textContent = "Сервис работает";
-    $("connection").classList.remove("offline");
+    $("demo-warning").hidden =
+      response.headers.get("X-Admin-Preview") !== "true";
+    const degraded = health.status !== "ok";
+    $("connection").querySelector("span").textContent = degraded
+      ? "Авторазбор недоступен"
+      : "Сервис работает";
+    $("connection").classList.toggle("offline", degraded);
     $("stat-rules").replaceChildren(
       document.createTextNode(`${health.rules_loaded} `),
     );

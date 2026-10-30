@@ -193,18 +193,23 @@ def _safe_article_excerpt(text: str) -> str | None:
     return line if len(line) <= 340 else line[:337].rsplit(" ", 1)[0] + "…"
 
 
+def validate_ticket(ticket: Any) -> tuple[str, list[dict[str, Any]]]:
+    """Validate the input independently of the classifier for safe fallback."""
+    if not isinstance(ticket, dict):
+        raise InputError("Запрос должен быть JSON-объектом")
+    kind = ticket.get("kind")
+    if not isinstance(kind, str) or kind not in {"complaint", "report"}:
+        raise InputError("kind должен быть complaint или report")
+    return kind, _player_messages(ticket)
+
+
 class TriageService:
     def __init__(self, catalog: Catalog):
         self.catalog = catalog
         self.duplicates = DuplicateDetector()
 
     def triage(self, ticket: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(ticket, dict):
-            raise InputError("Запрос должен быть JSON-объектом")
-        kind = ticket.get("kind")
-        if not isinstance(kind, str) or kind not in {"complaint", "report"}:
-            raise InputError("kind должен быть complaint или report")
-        player_messages = _player_messages(ticket)
+        kind, player_messages = validate_ticket(ticket)
         text = "\n".join(m.get("text", "") for m in player_messages)
         lang = detect_language(text, ticket.get("lang"))
         reply_lang = lang if lang in SUPPORTED_LANGUAGES else "ru"
