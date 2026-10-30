@@ -166,6 +166,13 @@
                 >
               </div>
               <div class="admin-stat">
+                <span class="admin-stat-icon coral" aria-hidden="true">!</span
+                ><span
+                  ><small>Эскалировано</small
+                  ><strong id="count-escalated">0</strong></span
+                >
+              </div>
+              <div class="admin-stat">
                 <span class="admin-stat-icon green" aria-hidden="true">✓</span
                 ><span
                   ><small>Ответ подготовлен</small
@@ -206,6 +213,14 @@
                     aria-pressed="true"
                   >
                     Активные
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    data-filter="escalated"
+                    aria-pressed="false"
+                  >
+                    Эскалации
                   </button>
                   <button
                     type="button"
@@ -314,8 +329,9 @@
                       aria-describedby="admin-draft-help"
                     ></textarea>
                     <p class="review-context" id="admin-draft-help">
-                      После завершения ответ появится оператору в открытом окне.
-                      Игроку он автоматически не отправляется.
+                      Сохранённые правки учитываются как обратная связь. После
+                      отправки ответ появится оператору в открытом окне; игроку
+                      он автоматически не отправляется.
                     </p>
                   </div>
                   <p id="review-notice" class="review-notice" role="status"></p>
@@ -326,7 +342,7 @@
                       class="admin-primary"
                       id="resolve-button"
                     >
-                      <span id="resolve-label">Завершить проверку</span
+                      <span id="resolve-label">Отправить оператору</span
                       ><span aria-hidden="true">→</span>
                     </button>
                     <button
@@ -338,12 +354,32 @@
                     </button>
                     <button
                       type="button"
+                      class="admin-secondary"
+                      id="edit-button"
+                    >
+                      Править ответ
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-escalate"
+                      id="escalate-review"
+                      aria-describedby="escalation-help"
+                    >
+                      Эскалировать
+                    </button>
+                    <button
+                      type="button"
                       class="admin-text-button"
                       id="take-button"
                     >
                       Взять в работу
                     </button>
                   </div>
+                  <p class="escalation-help" id="escalation-help">
+                    Эскалация помечает обращение в этой очереди для
+                    дополнительной проверки. Отдельных уведомлений и назначений
+                    пока нет.
+                  </p>
                   <div class="review-bottom">
                     <button
                       type="button"
@@ -363,6 +399,36 @@
                 </div>
               </section>
             </div>
+            <section class="feedback-panel" aria-labelledby="feedback-title">
+              <div class="feedback-copy">
+                <div class="admin-section-kicker">03 / ОБРАТНАЯ СВЯЗЬ</div>
+                <h2 id="feedback-title">Правки для будущего обучения</h2>
+                <p>
+                  Сохранено обращений с обратной связью:
+                  <strong id="feedback-count">0</strong>. Черновики и
+                  подтверждённые ответы помечаются отдельно; обучение
+                  автоматически не запускается.
+                </p>
+                <p class="feedback-privacy">
+                  Выгрузка содержит текст обращений и ответов. Храните её
+                  приватно и удаляйте по правилам проекта.
+                </p>
+              </div>
+              <div class="feedback-actions">
+                <button
+                  type="button"
+                  id="export-feedback"
+                  class="admin-secondary"
+                >
+                  Скачать правки JSONL
+                </button>
+                <p
+                  id="feedback-status"
+                  class="feedback-status"
+                  role="status"
+                ></p>
+              </div>
+            </section>
             <div class="admin-disclaimer">
               <span aria-hidden="true">i</span>
               <p>

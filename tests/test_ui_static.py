@@ -110,6 +110,15 @@ class AdminUiMarkupTests(unittest.TestCase):
         nav_links = [attrs for tag, attrs in self.markup.elements if tag == "a" and "admin-nav-link" in attrs.get("class", "").split()]
         self.assertTrue(all(link.get("aria-label") for link in nav_links))
 
+    def test_review_actions_and_feedback_controls_are_available(self):
+        buttons = {attrs.get("id"): attrs for tag, attrs in self.markup.elements if tag == "button"}
+        for element_id in ("edit-button", "save-button", "resolve-button", "escalate-review", "export-feedback"):
+            self.assertEqual(buttons[element_id].get("type"), "button")
+            self.assertIn(f'$("{element_id}").addEventListener', self.script)
+        filters = [attrs.get("data-filter") for tag, attrs in self.markup.elements if tag == "button"]
+        self.assertIn("escalated", filters)
+        self.assertIn('/admin/api/feedback/export', self.script)
+
     def test_no_browser_storage_or_html_injection_for_private_data(self):
         self.assertNotIn("localStorage", self.script)
         self.assertNotIn("sessionStorage", self.script)

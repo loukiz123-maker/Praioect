@@ -16,10 +16,12 @@ const state = {
   detail: null,
   dirty: false,
   busy: false,
+  exportController: null,
 };
 const statusNames = {
   waiting: "Ожидает",
   in_progress: "В работе",
+  escalated: "Эскалировано",
   resolved: "Ответ готов",
 };
 const sourceNames = {
@@ -111,6 +113,10 @@ function formatDate(seconds) {
 function showLogin(message = "") {
   state.authenticated = false;
   state.key = null;
+  state.exportController?.abort();
+  state.exportController = null;
+  $("export-feedback").disabled = false;
+  $("feedback-status").textContent = "";
   state.requestSerial += 1;
   state.selectionSerial += 1;
   state.offset = 0;
@@ -138,7 +144,13 @@ function showLogin(message = "") {
     "review-context",
   ])
     $(id).textContent = "";
-  for (const id of ["count-waiting", "count-in-progress", "count-resolved"])
+  for (const id of [
+    "count-waiting",
+    "count-in-progress",
+    "count-escalated",
+    "count-resolved",
+    "feedback-count",
+  ])
     $(id).textContent = "0";
   $("review-reasons").replaceChildren();
   $("operator-draft-text").textContent = "";
@@ -173,7 +185,9 @@ function renderList() {
     $("queue-message").textContent =
       state.filter === "resolved"
         ? "Готовых ответов пока нет."
-        : "В этом разделе пока нет обращений.";
+        : state.filter === "escalated"
+          ? "Эскалированных обращений пока нет."
+          : "В этом разделе пока нет обращений.";
   } else {
     $("queue-message").textContent = "";
   }
@@ -247,7 +261,9 @@ async function refreshList() {
     state.filteredTotal = data.filtered_total;
     $("count-waiting").textContent = String(data.counts.waiting);
     $("count-in-progress").textContent = String(data.counts.in_progress);
+    $("count-escalated").textContent = String(data.counts.escalated ?? 0);
     $("count-resolved").textContent = String(data.counts.resolved);
+    $("feedback-count").textContent = String(data.feedback_count ?? 0);
     $("queue-pagination").hidden = data.filtered_total <= data.limit;
     $("queue-previous").disabled = data.offset === 0;
     $("queue-next").disabled = data.offset + data.limit >= data.filtered_total;
@@ -328,7 +344,9 @@ function renderDetail(detail) {
   $("review-notice").textContent =
     detail.status === "resolved"
       ? "Ответ подготовлен и доступен оператору в открытом окне. Игроку он не отправлен."
-      : "";
+      : detail.status === "escalated"
+        ? "Обращение помечено для дополнительной проверки в общей очереди. Внешних уведомлений нет."
+        : "";
   $("review-error").textContent = "";
   $("take-button").hidden = detail.status === "in_progress";
   $("take-button").textContent =
@@ -338,7 +356,12 @@ function renderDetail(detail) {
       ? "Сохранить и вернуть в работу"
       : "Сохранить черновик";
   $("resolve-label").textContent =
-    detail.status === "resolved" ? "Обновить ответ" : "Завершить проверку";
+    detail.status === "resolved"
+      ? "Обновить ответ оператору"
+      : "Отправить оператору";
+  $("escalate-review").disabled = state.busy || detail.status === "escalated";
+  $("escalate-review").textContent =
+    detail.status === "escalated" ? "Эскалировано" : "Эскалировать";
   renderList();
 }
 
@@ -375,15 +398,27 @@ function setBusy(busy) {
     "take-button",
     "save-button",
     "resolve-button",
+    "edit-button",
+    "escalate-review",
     "reload-review",
     "delete-review",
     "logout-button",
   ])
-    $(id).disabled = busy;
+    $(id).disabled =
+      busy ||
+      (id === "escalate-review" && state.detail?.status === "escalated");
 }
 
 async function updateReview(status) {
   if (!state.detail || state.busy) return;
+  if (
+    state.detail.status === "resolved" &&
+    status !== "resolved" &&
+    !window.confirm(
+      "Вернуть готовый ответ в проверку? Он перестанет отображаться оператору как готовый. Уже скопированный текст отозвать нельзя.",
+    )
+  )
+    return;
   const draft = $("admin-draft").value;
   if (status === "resolved" && !draft.trim()) {
     $("review-error").textContent =
@@ -404,8 +439,10 @@ async function updateReview(status) {
     renderDetail(data);
     $("review-notice").textContent =
       status === "resolved"
-        ? "Проверка завершена. Ответ доступен оператору в открытом окне; игроку он не отправлен."
-        : "Изменения сохранены на сервере. Ответ ещё не передан оператору как готовый.";
+        ? "Ответ доступен оператору в открытом окне; игроку он не отправлен. Обратная связь сохранена."
+        : status === "escalated"
+          ? "Обращение помечено для дополнительной проверки в общей очереди. Внешних уведомлений нет."
+          : "Черновик сохранён на сервере. Правки учитываются в обратной связи; ответ ещё не передан оператору как готовый.";
     await refreshList();
   } catch (error) {
     $("review-error").textContent =
@@ -421,11 +458,79 @@ async function updateReview(status) {
   }
 }
 
+async function exportFeedback() {
+  if (!state.authenticated || state.exportController) return;
+  const controller = new AbortController();
+  state.exportController = controller;
+  $("export-feedback").disabled = true;
+  $("feedback-status").textContent = "Подготавливаем приватную выгрузку…";
+  const timer = window.setTimeout(() => controller.abort(), 60000);
+  try {
+    const headers = state.key ? { Authorization: `Bearer ${state.key}` } : {};
+    const response = await fetch("/admin/api/feedback/export", {
+      headers,
+      cache: "no-store",
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      let data;
+      try {
+        data = await response.json();
+      } catch (_) {
+        data = null;
+      }
+      throw new ApiError(
+        data?.error || "Не удалось выгрузить обратную связь.",
+        response.status,
+      );
+    }
+    const countHeader = response.headers.get("X-Feedback-Count");
+    const count = Number(countHeader);
+    if (
+      countHeader === null ||
+      !/^\d+$/.test(countHeader) ||
+      !Number.isSafeInteger(count)
+    )
+      throw new Error("Не удалось проверить размер выгрузки.");
+    const blob = await response.blob();
+    if (!state.authenticated || state.exportController !== controller) return;
+    if (!count) {
+      $("feedback-status").textContent = "Сохранённой обратной связи пока нет.";
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "admin-feedback.jsonl";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    $("feedback-status").textContent =
+      `Выгрузка подготовлена: ${count}. Проверьте скачивание и храните файл приватно.`;
+  } catch (error) {
+    if (state.authenticated && state.exportController === controller)
+      $("feedback-status").textContent =
+        error.name === "AbortError"
+          ? "Выгрузка прервана. Попробуйте ещё раз."
+          : error instanceof TypeError
+            ? "Нет связи с сервером. Выгрузка не подготовлена."
+            : error.message || "Не удалось подготовить выгрузку.";
+  } finally {
+    window.clearTimeout(timer);
+    if (state.exportController === controller) {
+      state.exportController = null;
+      $("export-feedback").disabled = false;
+    }
+  }
+}
+
 async function deleteReview() {
   if (!state.detail || state.busy) return;
   if (
     !window.confirm(
-      "Удалить обращение и ответ из очереди? Восстановить их будет нельзя.",
+      "Удалить обращение, ответ и связанную обратную связь? Восстановить их будет нельзя. Уже скачанные копии нужно удалить отдельно.",
     )
   )
     return;
@@ -509,8 +614,15 @@ $("admin-draft").addEventListener("input", () => {
   $("review-notice").textContent = "Есть несохранённые правки.";
 });
 $("take-button").addEventListener("click", () => updateReview("in_progress"));
-$("save-button").addEventListener("click", () => updateReview("in_progress"));
+$("edit-button").addEventListener("click", () => $("admin-draft").focus());
+$("save-button").addEventListener("click", () =>
+  updateReview(
+    state.detail?.status === "escalated" ? "escalated" : "in_progress",
+  ),
+);
+$("escalate-review").addEventListener("click", () => updateReview("escalated"));
 $("resolve-button").addEventListener("click", () => updateReview("resolved"));
+$("export-feedback").addEventListener("click", exportFeedback);
 $("reload-review").addEventListener("click", () => {
   if (state.detail) selectReview(state.detail.id);
 });

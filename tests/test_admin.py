@@ -76,8 +76,21 @@ class AdminApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         return body
 
+    def feedback(self):
+        request = urllib.request.Request(
+            self.url + "/admin/api/feedback/export", headers={"Authorization": f"Bearer {TEST_KEY}"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            raw = response.read()
+            rows = [json.loads(line) for line in raw.decode("utf-8").splitlines()]
+            self.assertEqual(int(response.headers["X-Feedback-Count"]), len(rows))
+            self.assertEqual(int(response.headers["Content-Length"]), len(raw))
+            self.assertEqual(response.headers.get_content_type(), "application/x-ndjson")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            return rows, raw
+
     def test_auth_and_private_files_are_not_public(self):
-        for path in ("/admin/api/reviews", "/admin/api/session"):
+        for path in ("/admin/api/reviews", "/admin/api/session", "/admin/api/feedback/export"):
             self.assertEqual(self.request(path)[0], 401)
             status, _, body = self.request(path, key="not-the-right-key")
             self.assertEqual(status, 401)
@@ -195,6 +208,129 @@ class AdminApiTests(unittest.TestCase):
         self.assertEqual(detail["operator_draft"], "Обновление оператора")
         self.assertEqual(detail["version"], 3)
 
+    def test_escalation_is_visible_in_queue_and_not_sent_as_a_reply(self):
+        receipt = new_receipt()
+        self.triage(receipt=receipt)
+        review_id = self.admin_list()["items"][0]["id"]
+        status, _, detail = self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 1, "status": "escalated", "draft": "Нужна дополнительная проверка"},
+        )
+        self.assertEqual((status, detail["status"]), (200, "escalated"))
+        self.assertEqual(self.request("/reviews/status", receipt=receipt)[2], {"status": "escalated", "reply": None})
+        active = self.admin_list()
+        self.assertEqual((active["counts"]["escalated"], active["filtered_total"]), (1, 1))
+        escalated = self.request("/admin/api/reviews?view=escalated", key=TEST_KEY)[2]
+        self.assertEqual((escalated["filtered_total"], escalated["items"][0]["id"]), (1, review_id))
+        _, _, final = self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 2, "status": "resolved", "draft": "Ответ после проверки"},
+        )
+        self.assertEqual(final["status"], "resolved")
+        self.assertEqual(self.request("/reviews/status", receipt=receipt)[2]["reply"], "Ответ после проверки")
+        self.assertEqual(self.request("/admin/api/reviews?view=escalated", key=TEST_KEY)[2]["filtered_total"], 0)
+
+    def test_feedback_is_private_versioned_persistent_and_exportable(self):
+        payload = ticket("Тестовое сообщение игрока", reporter_hash="private-hash", verdict="secret-verdict")
+        payload["messages"][0]["attachments"] = [{"content": "secret-attachment"}]
+        payload["messages"].append({"role": "admin", "text": "secret-admin-message"})
+        receipt = new_receipt()
+        _, _, result = self.triage(payload, receipt)
+        review_id = self.admin_list()["items"][0]["id"]
+        self.assertEqual(self.feedback()[0], [])
+        def update(version, status, text):
+            return self.request(
+                f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+                value={"version": version, "status": status, "draft": text},
+            )
+        self.assertEqual(update(1, "in_progress", "Черновая правка")[0], 200)
+        self.assertEqual(self.admin_list()["feedback_count"], 1)
+        rows, raw = self.feedback()
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["schema"], "support_copilot.admin_feedback.v1")
+        self.assertEqual(row["assistant"]["draft"], result["draft_reply"]["text"])
+        self.assertEqual(row["ticket"]["text"], "Тестовое сообщение игрока")
+        self.assertEqual((row["admin_draft"], row["feedback_type"]), ("Черновая правка", "edited"))
+        self.assertTrue(row["is_current"])
+        self.assertFalse(row["approved"])
+        for forbidden in ("private-hash", "secret-verdict", "secret-attachment", "secret-admin-message", receipt, TEST_KEY):
+            self.assertNotIn(forbidden.encode(), raw)
+        reopened = AdminQueue(self.root / "queue.sqlite3")
+        persisted = io.BytesIO()
+        self.assertEqual(reopened.write_feedback(persisted), 1)
+        self.assertEqual(json.loads(persisted.getvalue()), row)
+        self.assertEqual(update(2, "escalated", "Исправленный ответ")[0], 200)
+        row = self.feedback()[0][0]
+        self.assertEqual((row["status"], row["admin_draft"], row["approved"]), ("escalated", "Исправленный ответ", False))
+        manual = {"ticket": payload, "source": "manual", "result": result, "draft": "Правка оператора"}
+        self.assertEqual(self.request("/reviews/request", method="POST", value=manual, receipt=receipt)[0], 200)
+        self.assertFalse(self.feedback()[0][0]["is_current"])
+        self.assertEqual(update(3, "resolved", "Старая версия")[0], 409)
+        self.assertEqual(update(4, "resolved", "Проверенный ответ")[0], 200)
+        row = self.feedback()[0][0]
+        self.assertTrue(row["approved"])
+        self.assertTrue(row["is_current"])
+        self.assertEqual((row["operator_draft"], row["admin_draft"]), ("Правка оператора", "Проверенный ответ"))
+        self.assertEqual(len(self.feedback()[0]), 1)
+        self.assertEqual(update(5, "in_progress", "Проверенный ответ")[0], 200)
+        self.assertFalse(self.feedback()[0][0]["approved"])
+        self.assertEqual(self.request(
+            f"/admin/api/reviews/{review_id}", method="DELETE", key=TEST_KEY, value={"version": 6},
+        )[0], 200)
+        self.assertEqual(self.feedback()[0], [])
+
+    def test_export_keeps_multiline_content_as_separate_jsonl_records(self):
+        for index in range(2):
+            self.triage(payload=ticket(f"Игрок пишет строку {index}\nВторая строка"))
+        items = self.admin_list()["items"]
+        for index, item in enumerate(items):
+            self.assertEqual(self.request(
+                f"/admin/api/reviews/{item['id']}", method="POST", key=TEST_KEY,
+                value={"version": 1, "status": "resolved", "draft": f"Ответ {index}\nВторая строка"},
+            )[0], 200)
+        rows, raw = self.feedback()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(raw.splitlines()), 2)
+        self.assertTrue(all("\n" in row["ticket"]["text"] and "\n" in row["admin_draft"] for row in rows))
+
+    def test_unchanged_approval_is_distinct_from_unedited_work(self):
+        _, _, result = self.triage()
+        review_id = self.admin_list()["items"][0]["id"]
+        text = result["draft_reply"]["text"]
+        self.assertEqual(self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 1, "status": "in_progress", "draft": text},
+        )[0], 200)
+        self.assertEqual(self.feedback()[0], [])
+        self.assertEqual(self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 2, "status": "resolved", "draft": text},
+        )[0], 200)
+        row = self.feedback()[0][0]
+        self.assertEqual(row["feedback_type"], "unchanged")
+        self.assertTrue(row["approved"])
+
+    def test_export_failure_does_not_return_a_partial_download(self):
+        with patch.object(self.queue, "write_feedback", side_effect=OSError("private path details")):
+            status, headers, body = self.request("/admin/api/feedback/export", key=TEST_KEY)
+        self.assertEqual(status, 503)
+        self.assertNotIn("Content-Disposition", headers)
+        self.assertNotIn("private path details", json.dumps(body))
+
+    def test_feedback_without_assistant_output_is_marked_as_human(self):
+        self.server.service = None
+        self.triage()
+        review_id = self.admin_list()["items"][0]["id"]
+        self.assertEqual(self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 1, "status": "resolved", "draft": "Ответ без авторазбора"},
+        )[0], 200)
+        row = self.feedback()[0][0]
+        self.assertIsNone(row["assistant"])
+        self.assertEqual(row["feedback_type"], "human_reply")
+        self.assertTrue(row["approved"])
+
     def test_classifier_exception_and_malformed_response_fail_closed(self):
         for broken in (RuntimeError("sensitive exception details"), InputError("sensitive exception details"), {"category": "made-up"}):
             with self.subTest(broken=type(broken).__name__):
@@ -275,11 +411,19 @@ class AdminApiTests(unittest.TestCase):
         receipt = new_receipt()
         self.triage(receipt=receipt)
         review_id = self.admin_list()["items"][0]["id"]
+        self.assertEqual(self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 1, "status": "in_progress", "draft": "Сохранённая правка"},
+        )[0], 200)
+        self.assertEqual(len(self.feedback()[0]), 1)
         reopened = AdminQueue(self.root / "queue.sqlite3")
-        self.assertEqual(reopened.get(review_id)["status"], "waiting")
+        self.assertEqual(reopened.get(review_id)["status"], "in_progress")
         with sqlite3.connect(self.root / "queue.sqlite3") as conn:
             conn.execute("UPDATE reviews SET created_at = ?", (int(time.time()) - 15 * 86400,))
-        self.assertEqual(reopened.list_reviews()["counts"]["waiting"], 0)
+        self.assertEqual(reopened.list_reviews()["counts"]["in_progress"], 0)
+        self.assertEqual(reopened.write_feedback(io.BytesIO()), 0)
+        with sqlite3.connect(self.root / "queue.sqlite3") as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM admin_feedback").fetchone()[0], 0)
         with self.assertRaises(QueueNotFound):
             reopened.status(receipt)
 
@@ -354,13 +498,42 @@ class AdminStorageTests(unittest.TestCase):
             ids = [queue.enqueue(ticket(f"Обращение {i}"), new_receipt(), "failure")["id"] for i in range(53)]
             for review_id in ids[:2]:
                 queue.update(review_id, 1, "resolved", "Ответ администратора")
+            for review_id in ids[2:4]:
+                queue.update(review_id, 1, "escalated", "")
             first = queue.list_reviews(view="active")
             second = queue.list_reviews(view="active", offset=50)
             self.assertEqual(first["filtered_total"], 51)
             self.assertEqual((len(first["items"]), len(second["items"])), (50, 1))
             self.assertEqual(len({row["id"] for row in first["items"] + second["items"]}), 51)
+            self.assertEqual([row["status"] for row in first["items"][:2]], ["escalated", "escalated"])
+            self.assertEqual(queue.list_reviews(view="escalated")["filtered_total"], 2)
             self.assertEqual(queue.list_reviews(view="resolved")["filtered_total"], 2)
             self.assertEqual(queue.list_reviews(view="all")["filtered_total"], 53)
+
+    def test_feedback_write_failure_rolls_back_review_update(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "queue.sqlite3"
+            queue = AdminQueue(path)
+            review_id = queue.enqueue(ticket("Тестовое сообщение"), new_receipt(), "failure")["id"]
+            with sqlite3.connect(path) as conn:
+                conn.execute("CREATE TRIGGER fail_feedback BEFORE INSERT ON admin_feedback BEGIN SELECT RAISE(FAIL, 'test failure'); END")
+            with self.assertRaises(sqlite3.DatabaseError):
+                queue.update(review_id, 1, "resolved", "Подготовленный ответ")
+            detail = queue.get(review_id)
+            self.assertEqual((detail["version"], detail["status"], detail["admin_draft"]), (1, "waiting", None))
+            self.assertEqual(queue.write_feedback(io.BytesIO()), 0)
+
+    def test_existing_database_gains_feedback_table_without_losing_reviews(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "queue.sqlite3"
+            legacy = AdminQueue(path)
+            review_id = legacy.enqueue(ticket("Существующее обращение"), new_receipt(), "failure")["id"]
+            with sqlite3.connect(path) as conn:
+                conn.execute("DROP TABLE admin_feedback")
+            migrated = AdminQueue(path)
+            self.assertEqual(migrated.get(review_id)["message"], "Существующее обращение")
+            migrated.update(review_id, 1, "resolved", "Ответ администратора")
+            self.assertEqual(migrated.write_feedback(io.BytesIO()), 1)
 
     def test_queue_capacity_does_not_silently_discard_open_cases(self):
         with tempfile.TemporaryDirectory() as directory:

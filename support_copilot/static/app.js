@@ -50,7 +50,12 @@ const examples = {
     attachments: 1,
   },
 };
-const QUEUED_STATUSES = new Set(["waiting", "in_progress", "resolved"]);
+const QUEUED_STATUSES = new Set([
+  "waiting",
+  "in_progress",
+  "escalated",
+  "resolved",
+]);
 
 function setKind(kind) {
   state.kind = kind;
@@ -123,6 +128,7 @@ function scrollToResult() {
 function queueLabel(item) {
   if (item.reviewStatus === "resolved") return "Ответ готов";
   if (item.reviewStatus === "in_progress") return "В работе";
+  if (item.reviewStatus === "escalated") return "Доп. проверка";
   if (item.reviewStatus === "waiting") return "У администратора";
   if (item.reviewStatus === "not_sent" || item.reviewStatus === "not_found")
     return "Нет подтверждения";
@@ -182,11 +188,13 @@ function renderHandoff(item) {
   let hint = "Если заметили ошибку, отправьте обращение на ручную проверку.";
   let label = "Отправить администратору";
   let disabled = false;
-  if (item.reviewStatus === "waiting" || item.reviewStatus === "in_progress") {
+  if (["waiting", "in_progress", "escalated"].includes(item.reviewStatus)) {
     message =
       item.reviewStatus === "waiting"
         ? "Обращение в очереди администратора. Ожидает проверки."
-        : "Администратор взял обращение в работу.";
+        : item.reviewStatus === "escalated"
+          ? "Администратор пометил обращение для дополнительной проверки."
+          : "Администратор взял обращение в работу.";
     hint =
       "Ответ появится здесь, пока страница открыта. Игроку он автоматически не отправляется.";
     if (item.result && item.editBuffer !== item.sentDraft) {

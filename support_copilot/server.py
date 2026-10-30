@@ -10,6 +10,7 @@ import mimetypes
 import os
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -148,10 +149,10 @@ class CopilotHandler(BaseHTTPRequestHandler):
         # Never log ticket text, URL parameters, receipts, or caller identifiers.
         return
 
-    def _write(self, status: int, body: bytes, content_type: str, headers: dict[str, str] | None = None) -> None:
+    def _headers(self, status: int, length: int, content_type: str, headers: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(length))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -159,6 +160,9 @@ class CopilotHandler(BaseHTTPRequestHandler):
         for name, value in (headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
+
+    def _write(self, status: int, body: bytes, content_type: str, headers: dict[str, str] | None = None) -> None:
+        self._headers(status, len(body), content_type, headers)
         self.wfile.write(body)
 
     def _json(self, status: int, value: object, headers: dict[str, str] | None = None) -> None:
@@ -276,6 +280,21 @@ class CopilotHandler(BaseHTTPRequestHandler):
         )
         self._json(200 if not review["created"] else 201, {"status": review["status"]})
 
+    def _feedback_export(self) -> None:
+        queue = self._queue()
+        # Generate a complete, consistent export before sending headers. A
+        # private, automatically deleted temporary file keeps RAM bounded.
+        with tempfile.TemporaryFile(mode="w+b", dir=str(queue.path.parent)) as stream:
+            count = queue.write_feedback(stream)
+            length = stream.tell()
+            stream.seek(0)
+            self._headers(200, length, "application/x-ndjson; charset=utf-8", {
+                "Content-Disposition": 'attachment; filename="admin-feedback.jsonl"',
+                "X-Feedback-Count": str(count),
+            })
+            while chunk := stream.read(65536):
+                self.wfile.write(chunk)
+
     def _admin_detail_id(self, path: str) -> str | None:
         prefix = "/admin/api/reviews/"
         return path[len(prefix):] if path.startswith(prefix) else None
@@ -298,6 +317,9 @@ class CopilotHandler(BaseHTTPRequestHandler):
             elif path == "/admin/api/session":
                 self._authorize()
                 self._json(200, {"authenticated": True})
+            elif path == "/admin/api/feedback/export":
+                self._authorize()
+                self._feedback_export()
             elif path == "/admin/api/reviews":
                 self._authorize()
                 params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)

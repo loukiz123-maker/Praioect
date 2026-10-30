@@ -1,8 +1,9 @@
 """Private, local review queue for the administrator dashboard.
 
-Only player-side text and limited metadata are stored. Receipts are random
-capabilities; only their SHA-256 hashes are kept on disk. No passwords, account
-IDs, attachment contents, exception messages, or HTTP logs are persisted here.
+Only player-side text, limited metadata, and human feedback are stored.
+Receipts are random capabilities; only their SHA-256 hashes are kept on disk.
+Attachment contents, reporter hashes, exception messages, and HTTP logs are
+not stored. Player text and drafts may themselves contain sensitive data.
 """
 
 from __future__ import annotations
@@ -18,14 +19,14 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from .service import InputError, _positive_attachment, validate_ticket
 
 RECEIPT_RE = re.compile(r"^[0-9a-f]{64}$")
 REVIEW_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 KEY_RE = re.compile(r"^[A-Za-z0-9._~-]{24,200}$")
-STATUSES = {"waiting", "in_progress", "resolved"}
+STATUSES = {"waiting", "in_progress", "escalated", "resolved"}
 SOURCES = {"needs_human", "failure", "manual"}
 MAX_DRAFT_CHARS = 100_000
 
@@ -178,6 +179,15 @@ class AdminQueue:
                     version INTEGER NOT NULL DEFAULT 1
                 );
                 CREATE INDEX IF NOT EXISTS reviews_created_at ON reviews(created_at);
+                CREATE TABLE IF NOT EXISTS admin_feedback (
+                    review_id TEXT PRIMARY KEY REFERENCES reviews(id) ON DELETE CASCADE,
+                    review_version INTEGER NOT NULL,
+                    recorded_at INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    assistant_draft TEXT,
+                    operator_draft TEXT NOT NULL,
+                    corrected_draft TEXT NOT NULL
+                );
                 """
             )
 
@@ -186,6 +196,7 @@ class AdminQueue:
         connection = sqlite3.connect(str(self.path), timeout=5, isolation_level=None)
         try:
             connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA secure_delete = ON")
             yield connection
             if connection.in_transaction:
@@ -262,7 +273,8 @@ class AdminQueue:
 
     def list_reviews(self, *, view: str = "active", offset: int = 0, limit: int = 50) -> dict[str, Any]:
         where = {
-            "active": "WHERE status IN ('waiting', 'in_progress')",
+            "active": "WHERE status IN ('waiting', 'in_progress', 'escalated')",
+            "escalated": "WHERE status = 'escalated'",
             "resolved": "WHERE status = 'resolved'",
             "all": "",
         }
@@ -276,13 +288,14 @@ class AdminQueue:
                 """SELECT id, created_at, updated_at, status, source, kind,
                           substr(message, 1, 180) AS preview, result_json, version
                    FROM reviews """ + where[view] + """ ORDER BY
-                       CASE status WHEN 'waiting' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
+                       CASE status WHEN 'escalated' THEN 0 WHEN 'waiting' THEN 1 WHEN 'in_progress' THEN 2 ELSE 3 END,
                        updated_at DESC, id DESC LIMIT ? OFFSET ?""", (limit, offset),
             ).fetchall()
             counts = {status: 0 for status in STATUSES}
             for row in conn.execute("SELECT status, COUNT(*) AS count FROM reviews GROUP BY status"):
                 if row["status"] in counts:
                     counts[row["status"]] = row["count"]
+            feedback_count = conn.execute("SELECT COUNT(*) FROM admin_feedback").fetchone()[0]
         items = []
         for row in rows:
             result = json.loads(row["result_json"]) if row["result_json"] else None
@@ -293,9 +306,13 @@ class AdminQueue:
                 "category": result.get("category") if result else None,
                 "priority": result.get("priority") if result else None,
             })
-        total = (counts["waiting"] + counts["in_progress"] if view == "active"
+        total = (counts["waiting"] + counts["in_progress"] + counts["escalated"] if view == "active"
+                 else counts["escalated"] if view == "escalated"
                  else counts["resolved"] if view == "resolved" else sum(counts.values()))
-        return {"items": items, "counts": counts, "limit": limit, "offset": offset, "filtered_total": total}
+        return {
+            "items": items, "counts": counts, "feedback_count": feedback_count,
+            "limit": limit, "offset": offset, "filtered_total": total,
+        }
 
     def get(self, review_id: str) -> dict[str, Any]:
         if not REVIEW_ID_RE.fullmatch(review_id):
@@ -325,17 +342,91 @@ class AdminQueue:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._cleanup(conn)
-            row = conn.execute("SELECT version FROM reviews WHERE id = ?", (review_id,)).fetchone()
+            row = conn.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
             if row is None:
                 raise QueueNotFound("Обращение не найдено")
             if row["version"] != version:
                 raise QueueConflict("Обращение изменилось. Обновите данные и проверьте их заново")
+            previous = row["admin_draft"] if row["admin_draft"] is not None else row["operator_draft"]
+            has_feedback = conn.execute("SELECT 1 FROM admin_feedback WHERE review_id = ?", (review_id,)).fetchone()
+            now = int(time.time())
             conn.execute(
                 "UPDATE reviews SET status = ?, admin_draft = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-                (status, draft, int(time.time()), review_id),
+                (status, draft, now, review_id),
             )
+            # Keep one current signal per review, and commit it atomically with
+            # the human action. Drafts are explicitly marked as unapproved.
+            if draft != previous or status == "resolved" or has_feedback:
+                result = json.loads(row["result_json"]) if row["result_json"] else None
+                assistant_draft = result["draft_reply"]["text"] if result is not None else None
+                conn.execute(
+                    """INSERT INTO admin_feedback
+                       (review_id, review_version, recorded_at, status, assistant_draft,
+                        operator_draft, corrected_draft)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(review_id) DO UPDATE SET
+                           review_version = excluded.review_version,
+                           recorded_at = excluded.recorded_at,
+                           status = excluded.status,
+                           assistant_draft = excluded.assistant_draft,
+                           operator_draft = excluded.operator_draft,
+                           corrected_draft = excluded.corrected_draft""",
+                    (review_id, version + 1, now, status, assistant_draft, row["operator_draft"], draft),
+                )
             conn.commit()
         return self.get(review_id)
+
+    def write_feedback(self, stream: BinaryIO) -> int:
+        """Write a consistent, private JSONL export of current human feedback.
+
+        Unfinished and stale edits are included but explicitly marked; they
+        are not equivalent to approved training examples. No receipts,
+        reporter hashes, administrator messages, or attachment content leave
+        the queue. Player text and drafts may still contain personal data.
+        """
+        count = 0
+        with self._connect() as conn:
+            self._cleanup(conn)
+            conn.execute("BEGIN")
+            rows = conn.execute(
+                """SELECT f.*, r.kind, r.source, r.message, r.metadata_json, r.result_json,
+                          r.version AS current_version, r.status AS current_status
+                   FROM admin_feedback AS f JOIN reviews AS r ON r.id = f.review_id
+                   ORDER BY f.review_id"""
+            )
+            for row in rows:
+                metadata = json.loads(row["metadata_json"])
+                result = json.loads(row["result_json"]) if row["result_json"] else None
+                original = row["assistant_draft"]
+                corrected = row["corrected_draft"]
+                is_current = row["review_version"] == row["current_version"]
+                approved = is_current and row["status"] == "resolved" and row["current_status"] == "resolved"
+                record = {
+                    "schema": "support_copilot.admin_feedback.v1",
+                    "review_id": row["review_id"],
+                    "review_version": row["review_version"],
+                    "recorded_at": row["recorded_at"],
+                    "status": row["status"],
+                    "is_current": is_current,
+                    "approved": approved,
+                    "feedback_type": "human_reply" if original is None else "unchanged" if original == corrected else "edited",
+                    "source": row["source"],
+                    "ticket": {
+                        "kind": row["kind"],
+                        "text": row["message"],
+                        "server": metadata.get("server"),
+                        "attachments_indicated": bool(metadata.get("attachments_indicated")),
+                    },
+                    "assistant": {
+                        "lang": result["lang"], "category": result["category"],
+                        "priority": result["priority"], "draft": original,
+                    } if result is not None else None,
+                    "operator_draft": row["operator_draft"],
+                    "admin_draft": corrected,
+                }
+                stream.write((json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"))
+                count += 1
+        return count
 
     def delete(self, review_id: str, version: Any) -> None:
         if not REVIEW_ID_RE.fullmatch(review_id):
