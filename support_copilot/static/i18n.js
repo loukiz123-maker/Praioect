@@ -181,6 +181,112 @@
       ],
     "Статус сервиса ↗": ["Service status ↗", "Сервис күйі ↗"],
 
+    // Jury-facing project and data-storage explanation.
+    "Сервер не готов к публичному доступу. Данные организаторов и резервные копии нужно удалить в течение 14 дней после объявления победителей, если нет отдельного соглашения.":
+      [
+        "The server is not ready for public access. Organizer data and backups must be deleted within 14 days after the winners are announced, unless otherwise agreed.",
+        "Сервер жалпыға қолжетімді пайдалануға дайын емес. Бөлек келісім болмаса, ұйымдастырушылардың деректері мен сақтық көшірмелерін жеңімпаздар жарияланғаннан кейін 14 күн ішінде жою керек.",
+      ],
+    "При указанном хеше заявителя пятое похожее обращение за час отмечается как повтор. История сбрасывается при перезапуске сервиса.":
+      [
+        "When a reporter hash is provided, the fifth similar ticket within an hour is flagged as a duplicate. The history resets when the service restarts.",
+        "Өтініш берушінің хэші көрсетілсе, бір сағаттағы бесінші ұқсас өтініш қайталану ретінде белгіленеді. Сервис қайта іске қосылғанда тарих өшіріледі.",
+      ],
+    "Распознанные платежи, апелляции блокировок и подозрения на взлом требуют проверки человеком. Внешних уведомлений нет: администратор самостоятельно проверяет очередь.":
+      [
+        "Recognized payments, ban appeals and suspected account compromise require human review. There are no external notifications: the administrator checks the queue independently.",
+        "Анықталған төлем мәселелерін, бұғаттау апелляцияларын және аккаунт бұзылды деген күдікті адам тексеруі керек. Сыртқы хабарландырулар жоқ: әкімші кезекті өзі тексереді.",
+      ],
+    "Как работает система": ["How it works", "Жүйе қалай жұмыс істейді"],
+    "О ПРОЕКТЕ": ["ABOUT THE PROJECT", "ЖОБА ТУРАЛЫ"],
+    "Как работает Support Copilot": [
+      "How Support Copilot works",
+      "Support Copilot қалай жұмыс істейді",
+    ],
+    "Мы создали локальный веб-помощник на Python с интерфейсами оператора и администратора. Он помогает готовить ответы на обращения игроков, но не заменяет человека.":
+      [
+        "We built a local Python web assistant with operator and administrator interfaces. It helps prepare replies to player tickets, but does not replace a person.",
+        "Біз оператор мен әкімші интерфейстері бар Python негізіндегі жергілікті веб-көмекші жасадық. Ол ойыншылардың өтініштеріне жауап дайындауға көмектеседі, бірақ адамды алмастырмайды.",
+      ],
+    "ЛОКАЛЬНЫЙ MVP": ["LOCAL MVP", "ЖЕРГІЛІКТІ MVP"],
+    "Приём обращения": ["Receive a ticket", "Өтінішті қабылдау"],
+    "Оператор вводит сообщение игрока и число вложений. Сервис не открывает файлы и не видит содержимое скриншотов.":
+      [
+        "The operator enters the player's message and the number of attachments. The service does not open files or view screenshots.",
+        "Оператор ойыншы хабарламасын және тіркемелер санын енгізеді. Сервис файлдарды ашпайды және скриншоттардың мазмұнын көрмейді.",
+      ],
+    "Разбор и черновик": ["Analysis and draft", "Талдау және жауап жобасы"],
+    "Локальные эвристики определяют язык, категорию, приоритет и возможный повтор, пытаются выделить ник, сервер и упомянутые правила. В черновик добавляются только найденные подходящие пункты: ссылки не придумываются. Предположения игрока не считаются фактами. Упоминание доказательств не подтверждает их наличие.":
+      [
+        "Local heuristics identify language, category, priority and possible duplicates, and try to extract the nickname, server and mentioned rules. Only matching rule clauses found in the source are added to the draft; references are not invented. The player's claims are not treated as facts. Mentioning evidence does not prove it exists.",
+        "Жергілікті эвристикалар тілді, санатты, басымдықты және ықтимал қайталануды анықтап, никті, серверді және аталған ережелерді табуға тырысады. Жауап жобасына тек дереккөзден табылған сәйкес тармақтар қосылады; сілтемелер ойдан шығарылмайды. Ойыншының болжамдары факт ретінде қабылданбайды. Дәлелдердің аталғаны олардың бар екенін растамайды.",
+      ],
+    "Проверка человеком": ["Human review", "Адамның тексеруі"],
+    "Обращения, требующие человека, и корректные обращения при сбое разбора направляются в админку, если очередь доступна. Любое обращение можно передать вручную; проверяйте подтверждение передачи.":
+      [
+        "Tickets requiring human review and valid tickets affected by an analysis failure are sent to the admin queue if it is available. Any ticket can also be sent manually; check that delivery is confirmed.",
+        "Адамның тексеруі қажет өтініштер және талдау қатесіне ұшыраған жарамды өтініштер кезек қолжетімді болса, әкімші панеліне жіберіледі. Кез келген өтінішті қолмен жіберуге болады; жіберілгенін растауды тексеріңіз.",
+      ],
+    "Ответ оператору": ["Reply to the operator", "Операторға жауап"],
+    "Администратор проверяет сведения, может исправить ответ, сохранить или эскалировать обращение и вернуть готовый текст оператору. Игроку ответ автоматически не отправляется.":
+      [
+        "The administrator reviews the details, can edit the reply, save or escalate the ticket, and return the completed text to the operator. It is not sent to the player automatically.",
+        "Әкімші мәліметтерді тексереді, жауапты түзете алады, өтінішті сақтайды немесе қосымша тексеруге жібереді және дайын мәтінді операторға қайтарады. Жауап ойыншыға автоматты түрде жіберілмейді.",
+      ],
+    "ХРАНЕНИЕ ДАННЫХ": ["DATA STORAGE", "ДЕРЕКТЕРДІ САҚТАУ"],
+    "Где сохраняются обращения": [
+      "Where tickets are stored",
+      "Өтініштер қайда сақталады",
+    ],
+    "Очередь оператора и очередь администратора хранятся отдельно.": [
+      "The operator and administrator queues are stored separately.",
+      "Оператор мен әкімші кезектері бөлек сақталады.",
+    ],
+    "Вкладка оператора": ["Operator's tab", "Оператор қойындысы"],
+    "Пока хранилище браузера (sessionStorage) доступно, в этой вкладке сохраняются обращения, форма, черновики и доступ к ответам. При обновлении и возвращении из админки они восстанавливаются, но после закрытия вкладки могут пропасть. Вкладки не синхронизируются; при ошибке хранения появится предупреждение.":
+      [
+        "While browser storage (sessionStorage) is available, this tab keeps tickets, the form, drafts and access to replies. They are restored after a reload or a return from the admin panel, but may disappear when the tab closes. Tabs do not sync; a warning appears if storage fails.",
+        "Браузер жады (sessionStorage) қолжетімді кезде осы қойындыда өтініштер, форма, жауап жобалары және жауаптарға қолжетімділік сақталады. Бетті жаңартқанда немесе әкімші панелінен оралғанда олар қалпына келеді, бірақ қойынды жабылса, жоғалуы мүмкін. Қойындылар өзара синхрондалмайды; сақтау қатесі болса, ескерту көрсетіледі.",
+      ],
+    "Серверная очередь": ["Server queue", "Серверлік кезек"],
+    "В серверной очереди на базе SQLite сохраняются только обращения, направленные администратору. Подтверждённый статус означает, что запись получена. При обрыве подтверждение может потеряться даже после сохранения: проверьте админку или повторите передачу. Записи старше 14 дней удаляются при следующем обращении к очереди; администратор может удалить их раньше.":
+      [
+        "Only tickets sent to the administrator are saved in the SQLite server queue. A confirmed status means the record was received. If the connection drops, confirmation can be lost even after saving: check the admin panel or retry. Records older than 14 days are removed the next time the queue is accessed; an administrator can delete them earlier.",
+        "SQLite негізіндегі серверлік кезекте тек әкімшіге жіберілген өтініштер сақталады. Расталған күй жазбаның қабылданғанын білдіреді. Байланыс үзілсе, жазба сақталса да растау жоғалуы мүмкін: әкімші панелін тексеріңіз немесе қайта жіберіңіз. 14 күннен асқан жазбалар кезекке келесі рет жүгінгенде жойылады; әкімші оларды ертерек өшіре алады.",
+      ],
+    "Если данные вкладки и доступ к ответам утрачены, локальная очередь автоматически не восстановится с сервера. Переданные обращения остаются в админке до удаления. Очистка локальной очереди не удаляет серверные записи; форму нужно очистить отдельно.":
+      [
+        "If the tab's data and access to replies are lost, the local queue is not automatically restored from the server. Sent tickets remain in the admin panel until deleted. Clearing the local queue does not delete server records; clear the form separately.",
+        "Қойынды деректері мен жауаптарға қолжетімділік жоғалса, жергілікті кезек серверден автоматты түрде қалпына келмейді. Жіберілген өтініштер жойылғанға дейін әкімші панелінде қалады. Жергілікті кезекті тазалау сервердегі жазбаларды жоймайды; форманы бөлек тазалау керек.",
+      ],
+    "Языки и оригиналы": [
+      "Languages and original content",
+      "Тілдер және түпнұсқалар",
+    ],
+    "Переключатель меняет интерфейс на русский, английский или казахский. Текст игрока, черновики, цитаты правил и исходный JSON не переводятся. Ответ готовится по определённому языку игрока, но язык может быть определён ошибочно. Если он не определён, используется русский и требуется проверка.":
+      [
+        "The switch changes the interface to Russian, English or Kazakh. Player text, drafts, rule quotations and raw JSON are not translated. Replies follow the detected player language, which may be incorrect. If it is undetermined, Russian is used and review is required.",
+        "Ауыстырғыш интерфейсті орыс, ағылшын немесе қазақ тіліне өзгертеді. Ойыншы мәтіні, жауап жобалары, ереже дәйексөздері және бастапқы JSON аударылмайды. Жауап ойыншының анықталған тіліне қарай дайындалады, бірақ тіл қате анықталуы мүмкін. Тіл анықталмаса, орыс тілі қолданылады және тексеру қажет.",
+      ],
+    "Границы прототипа": ["Prototype limitations", "Прототиптің шектеулері"],
+    "Это эвристический MVP без LLM и внешних API. Качество на реальных данных не измерено; оценка уверенности не равна точности. Факты и окончательное решение проверяет человек.":
+      [
+        "This is a heuristic MVP without an LLM or external APIs. Its quality on real data has not been measured; the confidence score is not accuracy. A person checks the facts and makes the final decision.",
+        "Бұл LLM және сыртқы API қолданбайтын эвристикалық MVP. Нақты деректердегі сапасы өлшенбеген; сенімділік бағасы дәлдік көрсеткіші емес. Фактілерді адам тексереді және соңғы шешімді адам қабылдайды.",
+      ],
+    "Обратная связь": ["Feedback", "Кері байланыс"],
+    "Сохранённые правки администратора можно выгрузить в JSONL для будущей работы. Автоматического обучения нет. Выгрузка может содержать личные данные и требует приватного хранения.":
+      [
+        "Saved administrator edits can be exported as JSONL for future work. There is no automatic training. The export may contain personal data and must be kept private.",
+        "Әкімшінің сақталған түзетулерін болашақ жұмыс үшін JSONL түрінде жүктеуге болады. Автоматты оқыту жоқ. Экспортта жеке деректер болуы мүмкін, сондықтан оны құпия сақтау қажет.",
+      ],
+    Конфиденциальность: ["Privacy", "Құпиялылық"],
+    "Текст, черновики и доступ к ответам в браузере не шифруются. Не используйте общий компьютер. Удаление серверной записи не удаляет уже скачанные копии. Правки оператора видны администратору только после отдельной передачи.":
+      [
+        "Text, drafts and reply access in the browser are not encrypted. Do not use a shared computer. Deleting a server record does not delete downloaded copies. Operator edits are visible to the administrator only after being sent separately.",
+        "Браузердегі мәтін, жобалар және жауаптарға қолжетімділік шифрланбайды. Ортақ компьютерді пайдаланбаңыз. Сервердегі жазбаны жою бұрын жүктелген көшірмелерді жоймайды. Оператор түзетулері бөлек жіберілгеннен кейін ғана әкімшіге көрінеді.",
+      ],
+
     "Панель администратора — Grand Mobile": [
       "Admin panel — Grand Mobile",
       "Әкімші панелі — Grand Mobile",

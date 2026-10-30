@@ -68,7 +68,43 @@ async function send(page, text) {
       sessionStorage.clear();
     });
     await page.reload({ waitUntil: "networkidle0" });
+
+    // The jury explanation must be discoverable and translated in every locale.
+    for (const [language, heading, storage] of [
+      ["ru", "Как работает Support Copilot", "Где сохраняются обращения"],
+      ["en", "How Support Copilot works", "Where tickets are stored"],
+      [
+        "kk",
+        "Support Copilot қалай жұмыс істейді",
+        "Өтініштер қайда сақталады",
+      ],
+    ]) {
+      await page.select("#language-switch", language);
+      assert.equal(await content(page, "#explanation-title"), heading);
+      assert.equal(await content(page, "#memory-title"), storage);
+      assert.equal(
+        await page.$$(".explanation-step").then((items) => items.length),
+        4,
+      );
+      assert.match(
+        await content(page, ".memory-card:nth-child(1)"),
+        /sessionStorage/,
+      );
+      assert.match(await content(page, ".memory-card:nth-child(2)"), /SQLite/);
+      assert.match(await content(page, ".memory-card:nth-child(2)"), /14/);
+    }
     await page.select("#language-switch", "en");
+    await page.click(".hero-explainer-link");
+    assert.equal(await page.evaluate(() => location.hash), "#about-section");
+    assert.equal(
+      await page.evaluate(() => document.activeElement.id),
+      "about-section",
+      "The explanation should receive focus for keyboard and screen reader users",
+    );
+    assert.match(
+      await content(page, ".memory-note"),
+      /not automatically restored/,
+    );
     assert.equal(
       await page.evaluate(() => document.documentElement.lang),
       "en",

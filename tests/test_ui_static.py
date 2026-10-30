@@ -90,6 +90,37 @@ class UiMarkupTests(unittest.TestCase):
                 self.assertEqual(href, "/admin")
                 self.assertNotEqual(link.get("target"), "_blank")
 
+    def test_jury_explanation_is_linked_and_covers_storage_and_limits(self):
+        by_id = {attrs["id"]: (tag, attrs) for tag, attrs in self.markup.elements if "id" in attrs}
+        tag, section = by_id["about-section"]
+        self.assertEqual(tag, "section")
+        self.assertEqual(section.get("aria-labelledby"), "explanation-title")
+        self.assertEqual(section.get("tabindex"), "-1")
+        hero_link = next(
+            attrs for tag, attrs in self.markup.elements
+            if tag == "a" and "hero-explainer-link" in attrs.get("class", "").split()
+        )
+        self.assertEqual(hero_link.get("href"), "#about-section")
+        steps = [attrs for tag, attrs in self.markup.elements if tag == "li" and attrs.get("class") == "explanation-step"]
+        self.assertEqual(len(steps), 4)
+        content = " ".join(self.markup.text)
+        for important_limit in (
+            "не видит содержимое скриншотов",
+            "Игроку ответ автоматически не отправляется",
+            "sessionStorage",
+            "после закрытия вкладки могут пропасть",
+            "SQLite",
+            "Записи старше 14 дней удаляются",
+            "автоматически не восстановится с сервера",
+            "14 дней после объявления победителей",
+            "не переводятся",
+            "без LLM и внешних API",
+            "Автоматического обучения нет",
+            "в браузере не шифруются",
+        ):
+            with self.subTest(limit=important_limit):
+                self.assertIn(important_limit, content)
+
 
 class TranslationCoverageTests(unittest.TestCase):
     @classmethod
