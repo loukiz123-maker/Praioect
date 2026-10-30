@@ -161,6 +161,9 @@ function showLogin(message = "") {
   ])
     $(id).textContent = "0";
   $("review-reasons").replaceChildren();
+  $("rule-candidates-list").replaceChildren();
+  $("rule-candidates").hidden = true;
+  $("rule-candidates").open = false;
   $("operator-draft-text").textContent = "";
   $("admin-draft").value = "";
   $("review-notice").textContent = "";
@@ -350,6 +353,30 @@ function renderDetailText(detail) {
       }),
     );
   $("review-context").textContent = context.join(" ");
+  const candidates = detail.rule_candidates;
+  const hasReferences =
+    Array.isArray(candidates?.refs) && candidates.refs.length > 0;
+  const options = Array.isArray(candidates?.items) ? candidates.items : [];
+  $("rule-candidates").hidden = !hasReferences;
+  $("rule-candidates-empty").hidden = options.length > 0;
+  $("rule-candidates-truncated").hidden = !candidates?.truncated;
+  $("rule-candidates-list").replaceChildren();
+  for (const option of options) {
+    if (
+      typeof option.number !== "string" ||
+      typeof option.section_id !== "string" ||
+      typeof option.section !== "string" ||
+      typeof option.excerpt !== "string"
+    )
+      continue;
+    const li = document.createElement("li");
+    const title = document.createElement("strong");
+    const excerpt = document.createElement("p");
+    title.textContent = `${option.number} · ${option.section} (ID: ${option.section_id})`;
+    excerpt.textContent = option.excerpt;
+    li.append(title, excerpt);
+    $("rule-candidates-list").append(li);
+  }
   let reasons = detail.result?.reasons || [];
   if (detail.source === "failure")
     reasons = [
@@ -368,6 +395,7 @@ function renderDetailText(detail) {
 }
 
 function renderDetail(detail) {
+  if (state.selected !== detail.id) $("rule-candidates").open = false;
   state.detail = detail;
   state.selected = detail.id;
   state.dirty = false;

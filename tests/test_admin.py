@@ -158,6 +158,37 @@ class AdminApiTests(unittest.TestCase):
         )[0], 200)
         self.assertEqual(self.request("/reviews/status", receipt=receipt)[0], 404)
 
+    def test_claimed_rule_candidates_are_private_bounded_and_not_citations(self):
+        payload = ticket("Прошу проверить пункт 2.1.", rule_refs_raw="2.1")
+        payload["messages"].append({"role": "admin", "text": "3.4 SECRET_HISTORICAL_RESPONSE"})
+        status, _, result = self.triage(payload, new_receipt())
+        self.assertEqual(status, 200)
+        self.assertEqual(result["draft_reply"]["cited"], [])
+        review_id = self.admin_list()["items"][0]["id"]
+        path = f"/admin/api/reviews/{review_id}"
+        self.assertEqual(self.request(path)[0], 401)
+        detail = self.request(path, key=TEST_KEY)[2]
+        candidates = detail["rule_candidates"]
+        self.assertEqual(candidates["refs"], ["2.1"])
+        self.assertEqual(len(candidates["items"]), 3)
+        self.assertEqual({item["section_id"] for item in candidates["items"]}, {"general", "complaints", "green"})
+        self.assertTrue(all(item["number"] == "2.1" for item in candidates["items"]))
+        self.assertNotIn("SECRET_HISTORICAL_RESPONSE", json.dumps(detail))
+        self.assertFalse(candidates["truncated"])
+        _, _, updated = self.request(path, method="POST", key=TEST_KEY, value={"version": 1, "status": "in_progress", "draft": ""})
+        self.assertEqual(updated["rule_candidates"], candidates)
+
+    def test_candidate_list_is_bounded_and_unknown_numbers_are_not_fabricated(self):
+        payload = ticket("Жалоба по указанным номерам", rule_refs_raw="1.1 2.1 3.1 4.1 5.1 6.1 7.1 8.1 9.1")
+        self.triage(payload, new_receipt())
+        review_id = self.admin_list()["items"][0]["id"]
+        candidates = self.request(f"/admin/api/reviews/{review_id}", key=TEST_KEY)[2]["rule_candidates"]
+        self.assertTrue(candidates["truncated"])
+        self.assertEqual(len(candidates["refs"]), 8)
+        self.assertLessEqual(len(candidates["items"]), 30)
+        self.assertTrue(all(rule["number"] in candidates["refs"] for rule in candidates["items"]))
+        self.assertFalse(any(rule["number"] == "5.1" for rule in candidates["items"]))
+
     def test_manual_flag_and_retry_are_idempotent(self):
         payload = ticket("Привет", kind="report")
         receipt = new_receipt()

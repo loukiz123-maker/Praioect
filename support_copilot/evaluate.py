@@ -94,6 +94,8 @@ def evaluate(
     native_language_reviews: dict[str, int] = {}
     times: list[float] = []
     human = cited = required = required_cited = total = 0
+    required_numbered = required_named = required_any_source = 0
+    numbered_refs = {rule.number for rule in service.catalog.rules}
     for line_number, ticket in iter_tickets(input_path):
         key = ticket_key(ticket) if labels is not None or reviews is not None else None
         if key is not None:
@@ -108,11 +110,17 @@ def evaluate(
         times.append(time.perf_counter() - start)
         total += 1
         human += bool(result["needs_human"])
-        has_citation = bool(result["draft_reply"]["cited"])
+        refs = result["draft_reply"]["cited"]
+        has_citation = bool(refs)
         cited += has_citation
         if requires_rule(service.catalog, ticket["kind"], result["category"]):
             required += 1
             required_cited += has_citation
+            has_numbered = any(ref in numbered_refs for ref in refs)
+            has_named_source = bool(service.catalog.named_sources_in_draft(result["draft_reply"]["text"]))
+            required_numbered += has_numbered
+            required_named += has_named_source
+            required_any_source += bool(has_numbered or has_named_source)
 
         # When provided, bind each private review file to the original player
         # input as well as to the exact reviewed draft. Flat label-only files
@@ -167,6 +175,11 @@ def evaluate(
         "rules_required_with_citation": required_cited,
         "rules_required_without_citation": required - required_cited,
         "rules_required_citation_share": round(required_cited / required, 4) if required else None,
+        "rules_required_with_numbered_point": required_numbered,
+        "rules_required_with_named_source": required_named,
+        "rules_required_without_numbered_point": required - required_numbered,
+        "rules_required_without_any_rule_source": required - required_any_source,
+        "named_rule_terms_loaded": len(service.catalog.named_rules),
         "knowledge_articles_loaded": len(service.catalog.articles),
         "draft_rating_reviewed": len(draft_ratings),
         "draft_rating_mean": round(sum(draft_ratings) / len(draft_ratings), 4) if draft_ratings else None,
@@ -181,6 +194,7 @@ def evaluate(
             "p95 измерен в локальном процессе, без HTTP и стоимости инфраструктуры.",
             "Метрики классификации рассчитываются только по строкам с имеющейся разметкой.",
             "Обязательность правил определена предсказанной категорией, а не экспертной разметкой.",
+            "Ненумерованный термин показывается как источник в тексте, но не входит в cited и не заменяет обязательный номер пункта.",
             "Наличие цитаты не подтверждает её релевантность; ручные оценки считаются только по предоставленным отзывам.",
         ],
     }

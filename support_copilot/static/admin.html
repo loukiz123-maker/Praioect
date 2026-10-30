@@ -323,6 +323,29 @@
                     <ul id="review-reasons"></ul>
                   </div>
                   <details
+                    class="operator-draft rule-candidates"
+                    id="rule-candidates"
+                    hidden
+                  >
+                    <summary>
+                      Возможные пункты по указанному номеру
+                      <span aria-hidden="true">⌄</span>
+                    </summary>
+                    <p>
+                      Это варианты для проверки, не подтверждённые цитаты.
+                      Одинаковые номера встречаются в разных разделах; проверьте
+                      смысл и доказательства.
+                    </p>
+                    <p id="rule-candidates-empty" hidden>
+                      Пункты с указанными номерами не найдены.
+                    </p>
+                    <ol id="rule-candidates-list" data-i18n-preserve></ol>
+                    <p id="rule-candidates-truncated" hidden>
+                      Показаны не все варианты; проверьте остальные в исходном
+                      файле правил.
+                    </p>
+                  </details>
+                  <details
                     class="operator-draft"
                     id="operator-draft-section"
                     hidden

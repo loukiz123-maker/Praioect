@@ -7,8 +7,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
-from .text import contains_any, normalize, stems
+from .rp_terms import NamedRule, described_deathmatch, mentioned_term, parse_named_terms
+from .text import contains_any, mentions_abuse_shorthand, negates_abuse, normalize, stems
 
 RULE_START = re.compile(r"(?m)^[ \t]*(\d+(?:\.\d+){1,4})[ \t]+")
 NUMBER_REF = re.compile(r"^\d+(?:\.\d+){1,4}$")
@@ -26,6 +28,10 @@ class Rule:
     text: str
     excerpt: str
 
+    @property
+    def citation_ref(self) -> str:
+        return self.number
+
 
 @dataclass(frozen=True)
 class Article:
@@ -33,11 +39,19 @@ class Article:
     title: str
     text: str
     categories: tuple[str, ...]
+    source_url: str | None = None
+
+
+@dataclass(frozen=True)
+class ArticleMatch:
+    article: Article
+    passage: str
+    overlap: int
 
 
 @dataclass(frozen=True)
 class RuleMatch:
-    rule: Rule
+    rule: Rule | NamedRule
     overlap: int
 
 
@@ -101,6 +115,11 @@ def _expanded_query(text: str, lang: str) -> str:
         additions.append("зеленой зоне")
     if _mentions_house(q):
         additions.append("дом квартира жильцам")
+    if mentions_abuse_shorthand(q, lang):
+        # Retrieval vocabulary only; the statement remains an unverified claim.
+        additions.append("оскорбление")
+        if contains_any(q, ("родн", "родител", "семь", "мам", "матер", "отц", "пап")):
+            additions.append("упоминание родственников")
     return q + " " + " ".join(additions)
 
 
@@ -108,6 +127,8 @@ def _in_scope(rule: Rule, query: str) -> bool:
     """Reject some dangerous near matches to narrowly scoped rules."""
     body = normalize(rule.excerpt)
     q = normalize(query)
+    if "оскорб" in body and negates_abuse(q):
+        return False
     if ("жильцам" in body or ("территори" in body and ("дома" in body or "квартир" in body))):
         if not _mentions_house(q):
             return False
@@ -151,6 +172,7 @@ class Catalog:
         self.always_human = set(taxonomy.get("needs_human_always", []))
 
         self.rules: list[Rule] = []
+        self.named_rules: list[NamedRule] = []
         self.sections: list[tuple[str, str]] = []
         section_ids: set[str] = set()
         for index, section in enumerate(rules_data["rules"]):
@@ -163,6 +185,7 @@ class Catalog:
             section_ids.add(section_id)
             self.sections.append((section_id, section_name))
             body = section["text"]
+            self.named_rules.extend(parse_named_terms(section_id, section_name, body))
             starts = list(RULE_START.finditer(body))
             for pos, match in enumerate(starts):
                 end = starts[pos + 1].start() if pos + 1 < len(starts) else len(body)
@@ -207,9 +230,26 @@ class Catalog:
             categories = item.get("categories", [])
             if not isinstance(categories, list) or any(not isinstance(c, str) or c not in valid_categories for c in categories):
                 raise CatalogError("Категории статьи должны быть кодами из таксономии")
+            source_url = item.get("source_url")
+            if source_url is not None:
+                if not isinstance(source_url, str) or not source_url or len(source_url) > 2048 or re.search(r"\s", source_url):
+                    raise CatalogError("source_url должен быть корректным HTTPS-адресом")
+                try:
+                    parsed = urlsplit(source_url)
+                    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.port not in (None, 443):
+                        raise CatalogError("source_url должен быть корректным HTTPS-адресом")
+                except ValueError as exc:
+                    raise CatalogError("source_url должен быть корректным HTTPS-адресом") from exc
             ids.add(article_id)
-            articles.append(Article(article_id, title, text, tuple(categories)))
+            articles.append(Article(article_id, title, text, tuple(categories), source_url))
         return articles
+
+    def named_sources_in_draft(self, draft: str) -> list[NamedRule]:
+        """Identify literal, attributed term passages for audit/validation."""
+        return [
+            term for term in self.named_rules
+            if term.section_id in draft and term.section in draft and term.excerpt in draft
+        ]
 
     def candidate_rules(self, category_codes: Iterable[str], query: str) -> list[Rule]:
         result: dict[tuple[str, str], Rule] = {}
@@ -260,8 +300,25 @@ class Catalog:
         expanded = _expanded_query(query, lang)
         direct_terms = stems(query, lang)
         query_terms = direct_terms if strict else stems(expanded, lang)
+        named_match: RuleMatch | None = None
+        explicit_term = False
+        if not strict and any(code.startswith("complaint.") or code == "report.complaint" for code in codes):
+            abbreviation = mentioned_term(query, lang)
+            explicit_term = bool(abbreviation)
+            if not abbreviation and described_deathmatch(query, lang):
+                abbreviation = "DM"
+            candidates = [term for term in self.named_rules if term.abbreviation == abbreviation] if abbreviation else []
+            # Ambiguous source versions or duplicate labels must not be chosen
+            # by file order. The source ID is real but is not a point number.
+            if len(candidates) == 1:
+                named_match = RuleMatch(candidates[0], 1)
         if not query_terms:
-            return None
+            return named_match
+        # A specific named allegation (e.g. Mass DM GZ) is preferable to a
+        # broader numeric result generated only by query expansion. Do not
+        # override a separate, specifically classified non-RP complaint.
+        if named_match and explicit_term and set(codes).issubset({"complaint.dm", "complaint.other", "report.complaint"}):
+            return named_match
 
         def score_rules(rules: Iterable[Rule], terms: set[str], minimum: int) -> list[tuple[int, Rule]]:
             matches: list[tuple[int, Rule]] = []
@@ -284,7 +341,10 @@ class Catalog:
 
         ordinary = score_rules(self.candidate_rules(codes, expanded), query_terms, 2 if strict else 1)
         if ordinary:
+            # An ambiguous numerical match is not silently replaced by a term.
             return unique_best(ordinary)
+        if named_match:
+            return named_match
 
         # Only use an unambiguous reference as an extra search hint for the
         # broad complaint fallback. It may occur in several rule sections.
@@ -294,16 +354,35 @@ class Catalog:
         candidates = (rule for rule in self.rules if rule.number in refs)
         return unique_best(score_rules(candidates, direct_terms, 2))
 
-    def retrieve_article(self, category: str, query: str, lang: str) -> Article | None:
-        query_terms = stems(_expanded_query(query, lang), lang)
+    def retrieve_article(self, category: str, query: str, lang: str) -> ArticleMatch | None:
+        """Match and return the actual passage, not an unrelated first line.
+
+        At least two informative query stems must occur in the passage itself.
+        A tie between different passages is ambiguous and fails closed.
+        """
+        query_terms = {term for term in stems(_expanded_query(query, lang), lang) if len(term) >= 5}
         if len(query_terms) < 2:
             return None
-        best: tuple[int, Article] | None = None
+        candidates: dict[tuple[str, str], ArticleMatch] = {}
         for article in self.articles:
             if article.categories and category not in article.categories:
                 continue
-            overlap = query_terms & stems(article.title + " " + article.text)
-            score = len({x for x in overlap if len(x) >= 5})
-            if score >= 2 and (best is None or score > best[0]):
-                best = (score, article)
-        return best[1] if best else None
+            for raw_line in article.text.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                # A long paragraph may contain unrelated facts; score bounded
+                # sentences individually rather than clipping a matching tail.
+                passages = [line] if len(line) <= 340 else re.split(r"(?<=[.!?])\s+", line)
+                for passage in passages:
+                    passage = passage.strip()
+                    if not passage or len(passage) > 340:
+                        continue
+                    overlap = query_terms & stems(passage, lang)
+                    if len(overlap) >= 2:
+                        candidates[(article.article_id, passage)] = ArticleMatch(article, passage, len(overlap))
+        if not candidates:
+            return None
+        score = max(match.overlap for match in candidates.values())
+        best = [match for match in candidates.values() if match.overlap == score]
+        return best[0] if len(best) == 1 else None

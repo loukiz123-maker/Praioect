@@ -793,6 +793,29 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.rule-candidates > p {
+  max-height: none;
+  overflow: visible;
+}
+.rule-candidates ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rule-candidates li {
+  padding: 11px;
+  border-top: 1px solid #e0e4eb;
+  overflow-wrap: anywhere;
+}
+.rule-candidates li strong {
+  color: #3d4960;
+  font-size: 12px;
+}
+.rule-candidates li p {
+  max-height: none;
+  padding: 5px 0 0;
+  border: 0;
+}
 .draft-block > p:not(.review-context) {
   margin: 0 0 8px;
   color: #637084;

@@ -97,5 +97,32 @@ def stems(text: str, lang: str | None = None) -> set[str]:
     return result
 
 
+# Common game shorthand. Merely mentioning a parent or a family is NOT an
+# accusation of an insult; the player must use an abuse/mention expression.
+_ABUSE_SHORTHAND = re.compile(r"(?<!\w)оск(?!\w)")
+_FAMILY_MENTION = re.compile(
+    r"(?<!\w)(?:упом(?:ин\w*|ян\w*|а)?|упомян\w*)\s+"
+    r"(?:(?:мо\w*|его|ее|тво\w*|их|сво\w*)\s+){0,2}"
+    r"(?:родн\w*|родител\w*|семь\w*|мам\w*|матер\w*|отц\w*|пап\w*)(?!\w)"
+)
+_ABUSE_EVENT = re.compile(r"(?<!\w)(?:оск(?!\w)|оскорб\w*|упом(?:ин\w*|ян\w*|а)?|упомян\w*|insult\w*)(?!\w)")
+_NEGATIVE_ABUSE_BEFORE = re.compile(r"(?:^|\W)(?:не|нет|без|not|no|without)(?:\s+(?:был\w*|было|меня|его|ее|мені|any)){0,2}\s*$")
+_NEGATIVE_ABUSE_AFTER = re.compile(r"^\s*(?:не\s+был\w*|не\s+было|нет|was\s+not)(?:\b|$)")
+
+
+def negates_abuse(text: str, lang: str | None = None) -> bool:
+    value = normalize(text, lang)
+    return any(
+        _NEGATIVE_ABUSE_BEFORE.search(value[max(0, m.start() - 48):m.start()])
+        or _NEGATIVE_ABUSE_AFTER.search(value[m.end():m.end() + 48])
+        for m in _ABUSE_EVENT.finditer(value)
+    )
+
+
+def mentions_abuse_shorthand(text: str, lang: str | None = None) -> bool:
+    value = normalize(text, lang)
+    return not negates_abuse(value) and bool(_ABUSE_SHORTHAND.search(value) or _FAMILY_MENTION.search(value))
+
+
 def contains_any(text: str, patterns: Iterable[str]) -> bool:
     return any(pattern in text for pattern in patterns)

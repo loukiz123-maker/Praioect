@@ -29,7 +29,7 @@ from .admin_queue import (
 )
 from .catalog import CatalogError
 from .config import add_data_arguments, make_service
-from .service import InputError, TriageService, validate_ticket
+from .service import NAMED_RULE_REASON, RULE_REF_RE, InputError, TriageService, validate_ticket
 from .text import SUPPORTED_LANGUAGES
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -97,6 +97,10 @@ def valid_result(value: Any, service: TriageService | None) -> bool:
         rule_numbers = {rule.number for rule in service.catalog.rules}
         if any(ref not in rule_numbers or ref not in draft["text"] for ref in draft["cited"]):
             return False
+        # A term source is separate context, not a number in `cited`. If the
+        # assistant says it found a term, require a literal attributed source.
+        if NAMED_RULE_REASON in value["reasons"] and not service.catalog.named_sources_in_draft(draft["text"]):
+            return False
     try:
         json.dumps(value, ensure_ascii=False).encode("utf-8")
     except (TypeError, UnicodeError, ValueError, RecursionError):
@@ -109,7 +113,8 @@ def _string_list(value: Any, max_items: int, max_length: int) -> bool:
 
 
 def _ensure_safety_review(result: dict[str, Any], service: TriageService) -> dict[str, Any]:
-    risk = result["category"] in {"report.payment", "report.account", "complaint.admin"}
+    risk = result["category"] in {"report.payment", "report.account", "complaint.admin", "report.complaint"}
+    risk = risk or result["category"].startswith("complaint.") or NAMED_RULE_REASON in result["reasons"]
     risk = risk or result["category"] in service.catalog.always_human
     risk = risk or result["priority"] == "p0" or result["confidence"] < 0.6 or result["lang"] == "und" or result["is_spam_or_duplicate"]
     if risk and not result["needs_human"]:
@@ -300,6 +305,28 @@ class CopilotHandler(BaseHTTPRequestHandler):
         prefix = "/admin/api/reviews/"
         return path[len(prefix):] if path.startswith(prefix) else None
 
+    def _with_rule_candidates(self, detail: dict[str, Any]) -> dict[str, Any]:
+        """Show possible source clauses to an authenticated human, not as citations."""
+        service = self.server.service
+        if not service:
+            return {**detail, "rule_candidates": None}
+        meta = detail.get("metadata") or {}
+        raw = str(meta.get("rule_refs_raw") or "") + " " + str(detail.get("message") or "")
+        refs = list(dict.fromkeys(RULE_REF_RE.findall(raw)))
+        selected = set(refs[:8])
+        matches = [rule for rule in service.catalog.rules if rule.number in selected]
+        return {
+            **detail,
+            "rule_candidates": {
+                "refs": refs[:8],
+                "items": [
+                    {"number": rule.number, "section_id": rule.section_id, "section": rule.section, "excerpt": rule.excerpt}
+                    for rule in matches[:30]
+                ],
+                "truncated": len(refs) > 8 or len(matches) > 30,
+            },
+        }
+
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
         try:
@@ -332,7 +359,7 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 self._json(200, self._queue().list_reviews(view=view, offset=offset))
             elif (review_id := self._admin_detail_id(path)) is not None:
                 self._authorize()
-                self._json(200, self._queue().get(review_id))
+                self._json(200, self._with_rule_candidates(self._queue().get(review_id)))
             elif path in ASSETS:
                 asset = STATIC / ASSETS[path]
                 try:
@@ -362,7 +389,8 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 body = self._body()
                 if not isinstance(body, dict):
                     raise InputError("Нужен JSON-объект")
-                self._json(200, self._queue().update(review_id, body.get("version"), body.get("status"), body.get("draft")))
+                updated = self._queue().update(review_id, body.get("version"), body.get("status"), body.get("draft"))
+                self._json(200, self._with_rule_candidates(updated))
             else:
                 raise HttpFailure(404, "Маршрут не найден")
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):

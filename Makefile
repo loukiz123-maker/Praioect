@@ -10,7 +10,7 @@ WORKERS ?= 1
 
 DATA_ARGS = --rules "$(RULES)" --taxonomy "$(TAXONOMY)" $(if $(KNOWLEDGE),--knowledge "$(KNOWLEDGE)",)
 
-.PHONY: serve predict evaluate review benchmark test
+.PHONY: serve predict evaluate audit review benchmark test
 
 serve:
 	$(PYTHON) -m support_copilot.server $(DATA_ARGS) --host 0.0.0.0 --port $(PORT)
@@ -23,6 +23,10 @@ predict:
 evaluate:
 	@test -n "$(IN)" || (echo 'Укажите IN=путь/к/tickets_valid.jsonl' >&2; exit 2)
 	$(PYTHON) -m support_copilot.evaluate $(DATA_ARGS) --in "$(IN)" $(if $(LABELS),--labels "$(LABELS)",) $(if $(REVIEWS),--reviews "$(REVIEWS)",)
+
+audit:
+	@test -n "$(IN)" || (echo 'Укажите IN=путь/к/приватным-обращениям' >&2; exit 2)
+	$(PYTHON) -m support_copilot.audit $(DATA_ARGS) --in "$(IN)"
 
 review:
 	@test -n "$(IN)" || (echo 'Укажите IN=путь/к/tickets_valid.jsonl' >&2; exit 2)

@@ -1164,6 +1164,28 @@
       "Reported references: {value}.",
       "Көрсетілген сілтемелер: {value}.",
     ],
+    "Возможные пункты по указанному номеру": [
+      "Possible clauses matching the reported number",
+      "Көрсетілген нөмірге сәйкес ықтимал тармақтар",
+    ],
+    "Это варианты для проверки, не подтверждённые цитаты. Одинаковые номера встречаются в разных разделах; проверьте смысл и доказательства.":
+      [
+        "These are candidates for review, not verified citations. Numbers can recur in different sections; check context and evidence.",
+        "Бұлар — расталған дәйексөздер емес, тексерілетін нұсқалар. Бірдей нөмірлер әр бөлімде кездеседі; мағынасы мен дәлелдерді тексеріңіз.",
+      ],
+    "Пункты с указанными номерами не найдены.": [
+      "No clauses with the reported numbers were found.",
+      "Көрсетілген нөмірлері бар тармақтар табылмады.",
+    ],
+    "Показаны не все варианты; проверьте остальные в исходном файле правил.": [
+      "Not all candidates are shown; check the remaining ones in the original rules file.",
+      "Барлық нұсқа көрсетілген жоқ; қалғанын бастапқы ережелер файлынан тексеріңіз.",
+    ],
+    "Найден ненумерованный термин из правил; он не заменяет проверенный номер пункта.":
+      [
+        "An unnumbered term was found in the rules; it does not replace a verified clause number.",
+        "Ережелерден нөмірленбеген термин табылды; ол тексерілген тармақ нөмірін алмастырмайды.",
+      ],
     "Категория помощника: {value}.": [
       "Assistant category: {value}.",
       "Көмекші анықтаған санат: {value}.",

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
-from .text import normalize, stems, words
+from .rp_terms import mentioned_term
+from .text import mentions_abuse_shorthand, negates_abuse, normalize, stems, words
 
 # Intents are deliberately broader than the few examples in the supplied
 # taxonomy. They are only a baseline until labeled data is available.
@@ -44,6 +46,20 @@ def find_signals(text: str, lang: str) -> set[str]:
     value = normalize(text, lang)
     tokens = words(value)
     found = {name for name, patterns in INTENTS.items() if any(_pattern_matches(value, tokens, p) for p in patterns)}
+    if mentions_abuse_shorthand(value, lang):
+        found.add("insult")
+    if negates_abuse(value, lang):
+        found.discard("insult")
+    term = mentioned_term(text, lang)
+    if term in {"DM", "MASS DM", "MASS DM GZ", "DB", "SK", "MASS SK", "RK", "TK"}:
+        found.add("dm")
+    # An appeal can concern a mute, warning or other penalty, not just a ban.
+    # Require both an appeal/disagreement and a sanction; do not infer one from
+    # "наказание" alone or from a routine request to punish someone else.
+    appeal = r"(?:не\s+соглас\w*|несоглас\w*|обжал\w*|оспор\w*|апелляц\w*|appeal\w*|disagree\w*|unfair\w*)"
+    sanction = r"(?:наказан\w*|санкц\w*|мут\w*|варн\w*|джайл\w*|mute\w*|warn\w*|jail\w*|penalt\w*|punish\w*)"
+    if re.search(rf"{appeal}.{{0,60}}{sanction}|{sanction}.{{0,60}}{appeal}", value):
+        found.add("ban")
     # Avoid treating "в банке" as a ban. Exact short terms are separate.
     if any(t in {"бан", "бане", "бана", "баном", "ban", "banim", "блокировка"} for t in tokens):
         found.add("ban")
