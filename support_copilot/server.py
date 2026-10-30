@@ -250,9 +250,7 @@ class CopilotHandler(BaseHTTPRequestHandler):
             if not valid_result(result, service):
                 raise ValueError("invalid classifier result")
             result = _ensure_safety_review(result, service)
-        except InputError:
-            raise
-        except Exception as exc:  # Never leak exception details or payloads.
+        except Exception as exc:  # Input was already validated; any classifier error needs review.
             print(f"Ошибка обработки запроса: {type(exc).__name__}", file=sys.stderr)
             headers = self._try_enqueue(payload, receipt, "failure")
             self._json(500, {"error": "Не удалось автоматически разобрать обращение"}, headers)

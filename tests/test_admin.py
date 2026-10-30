@@ -26,7 +26,7 @@ from support_copilot.admin_queue import (
 )
 from support_copilot.catalog import Catalog
 from support_copilot.server import CopilotServer
-from support_copilot.service import TriageService
+from support_copilot.service import InputError, TriageService
 
 # A synthetic fixture, not an actual access key.
 TEST_KEY = "synthetic-admin-access-key-1234567890"
@@ -196,7 +196,7 @@ class AdminApiTests(unittest.TestCase):
         self.assertEqual(detail["version"], 3)
 
     def test_classifier_exception_and_malformed_response_fail_closed(self):
-        for broken in (RuntimeError("sensitive exception details"), {"category": "made-up"}):
+        for broken in (RuntimeError("sensitive exception details"), InputError("sensitive exception details"), {"category": "made-up"}):
             with self.subTest(broken=type(broken).__name__):
                 receipt = new_receipt()
                 kwargs = {"side_effect": broken} if isinstance(broken, Exception) else {"return_value": broken}
