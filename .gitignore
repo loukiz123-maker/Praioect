@@ -1,0 +1,27 @@
+# Организаторские данные и любые результаты работы с ними не публикуются.
+/data/
+/input/
+/inputs/
+/output/
+/outputs/
+/rules.json
+/taxonomy.json
+/knowledge.json
+*.jsonl
+*.jsonl.gz
+*.csv
+*.arb
+*.parquet
+*.sqlite
+*.sqlite3
+*.db
+
+# Python / editor artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+*.log
+.pytest_cache/
+.DS_Store
