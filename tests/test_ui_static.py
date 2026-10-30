@@ -1,5 +1,7 @@
 """Dependency-free checks for the demo's markup and JavaScript contract."""
 
+import ast
+import json
 import re
 import unittest
 from collections import Counter
@@ -15,6 +17,12 @@ class Markup(HTMLParser):
         super().__init__()
         self.elements = []
         self.ids = []
+        self.text = []
+
+    def handle_data(self, text):
+        normalized = " ".join(text.split())
+        if normalized:
+            self.text.append(normalized)
 
     def handle_starttag(self, tag, attributes):
         attrs = dict(attributes)
@@ -80,7 +88,88 @@ class UiMarkupTests(unittest.TestCase):
                 self.assertIn(href.lstrip("#"), self.markup.ids)
             else:
                 self.assertEqual(href, "/admin")
-                self.assertEqual(link.get("target"), "_blank")
+                self.assertNotEqual(link.get("target"), "_blank")
+
+
+class TranslationCoverageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.script = (STATIC / "i18n.js").read_text(encoding="utf-8")
+        quoted = r'"(?:[^"\\]|\\.)*"'
+        pattern = rf'^\s*({quoted}|[\w$]+)\s*:\s*\[\s*({quoted})\s*,\s*({quoted})\s*,?\s*\]'
+        rows = re.findall(pattern, cls.script, re.MULTILINE)
+        cls.messages = {
+            (json.loads(key) if key.startswith('"') else key): (json.loads(en), json.loads(kk))
+            for key, en, kk in rows
+        }
+        if len(rows) != len(cls.messages):
+            raise AssertionError("Duplicate interface translation keys")
+
+    def test_both_pages_have_accessible_language_controls_and_translated_static_text(self):
+        for filename in ("index.html", "admin.html"):
+            with self.subTest(page=filename):
+                markup = Markup()
+                markup.feed((STATIC / filename).read_text(encoding="utf-8"))
+                by_id = {attrs["id"]: (tag, attrs) for tag, attrs in markup.elements if "id" in attrs}
+                self.assertEqual(by_id["language-switch"][0], "select")
+                self.assertTrue(any(tag == "label" and attrs.get("for") == "language-switch" for tag, attrs in markup.elements))
+                scripts = [attrs.get("src") for tag, attrs in markup.elements if tag == "script"]
+                self.assertLess(scripts.index("/i18n.js"), len(scripts) - 1)
+                strings = list(markup.text)
+                for _, attrs in markup.elements:
+                    strings.extend(" ".join(attrs[name].split()) for name in ("aria-label", "placeholder", "title") if name in attrs)
+                missing = [value for value in strings if re.search(r"[А-Яа-яЁё]", value) and value not in self.messages]
+                self.assertEqual(missing, [], f"Untranslated static text in {filename}")
+
+    def test_translation_templates_keep_all_placeholders(self):
+        self.assertGreater(len(self.messages), 300)
+        for source, translations in self.messages.items():
+            expected = set(re.findall(r"\{\w+\}", source))
+            for translated in translations:
+                self.assertTrue(translated, source)
+                self.assertEqual(set(re.findall(r"\{\w+\}", translated)), expected, source)
+
+    def test_interface_owned_russian_strings_have_translations(self):
+        # Deliberately untranslated example text and grammatical stems handled by
+        # pluralForm are not standalone interface labels.
+        exclusions = {
+            "Ойыншы мені чатта ќорлады. Көмек беріңіз.",
+            "обращение", "обращения", "пункт", "пункта", "символ", "символа", "символов",
+            "өтініш", "таңба", "тармақ",
+        }
+        for filename in ("app.js", "admin.js"):
+            script = (STATIC / filename).read_text(encoding="utf-8")
+            literals = re.findall(r'"([^"\n]*[А-Яа-яЁё][^"\n]*)"', script)
+            missing = [value for value in literals if value not in self.messages and value not in exclusions]
+            self.assertEqual(missing, [], f"Untranslated application text in {filename}")
+
+    def test_classifier_and_api_explanations_and_errors_have_translations(self):
+        root = STATIC.parents[1]
+        called = {"append", "InputError", "HttpFailure", "QueueConflict", "QueueNotFound", "QueueFull"}
+        for name in ("service.py", "server.py", "admin_queue.py"):
+            tree = ast.parse((root / "support_copilot" / name).read_text(encoding="utf-8"))
+            missing = []
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, (ast.Name, ast.Attribute)):
+                    continue
+                function = node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+                if function not in called:
+                    continue
+                for value in node.args:
+                    if (isinstance(value, ast.Constant) and isinstance(value.value, str)
+                        and re.search(r"[А-Яа-яЁё]", value.value) and value.value not in self.messages):
+                        missing.append(value.value)
+            self.assertEqual(missing, [], f"Untranslated server text in {name}")
+
+    def test_player_data_and_admin_secrets_remain_separate(self):
+        operator = (STATIC / "app.js").read_text(encoding="utf-8")
+        admin = (STATIC / "admin.js").read_text(encoding="utf-8")
+        self.assertIn("sessionStorage.setItem(SESSION_KEY", operator)
+        self.assertIn("restoreSession()", operator)
+        self.assertNotIn("sessionStorage.setItem", admin)
+        for selector in ("#source-text", "#review-message", "#operator-draft-text", ".admin-item-message"):
+            self.assertIn(selector, self.script)
+        self.assertIn('window.addEventListener("pagehide", () => showLogin())', admin)
 
 
 class AdminUiMarkupTests(unittest.TestCase):
@@ -123,7 +212,7 @@ class AdminUiMarkupTests(unittest.TestCase):
         self.assertNotIn("localStorage", self.script)
         self.assertNotIn("sessionStorage", self.script)
         self.assertNotIn("innerHTML", self.script)
-        self.assertIn('$("review-message").textContent = detail.message', self.script)
+        self.assertRegex(self.script, r'\$\("review-message"\)\.textContent\s*=\s*detail\.message')
 
 
 if __name__ == "__main__":

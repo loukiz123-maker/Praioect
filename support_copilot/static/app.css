@@ -1405,6 +1405,39 @@ fieldset.field-block {
   gap: 15px;
   margin-bottom: 14px;
 }
+.queue-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.queue-clear {
+  padding: 7px 11px;
+  border: 1px solid #dfe3eb;
+  border-radius: 20px;
+  background: #fff;
+  color: #595272;
+  font-size: 12px;
+  font-weight: 600;
+}
+.queue-clear:hover:not(:disabled) {
+  border-color: #a29bd4;
+  background: #f5f4ff;
+}
+.queue-clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.storage-warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2bec0;
+  border-radius: 8px;
+  background: #fff3f3;
+  color: #81343b;
+  font-size: 13px;
+}
 .queue-total {
   padding: 7px 11px;
   border: 1px solid #dfe3eb;
@@ -1888,5 +1921,62 @@ fieldset.field-block {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* Shared language picker, present on both the operator and admin pages. */
+.language-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 7px 0 9px;
+  border: 1px solid #dddff0;
+  border-radius: 9px;
+  background: #f7f7fd;
+  color: #57509e;
+}
+.language-control svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+.language-control select {
+  max-width: 105px;
+  padding: 6px 2px;
+  border: 0;
+  background: transparent;
+  color: #393467;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+.language-control select:focus-visible {
+  outline: 3px solid #5951bb;
+  outline-offset: 3px;
+}
+@media (max-width: 450px) {
+  .topbar-right {
+    gap: 7px;
+  }
+  .status-indicator > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .queue-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .queue-actions {
+    justify-content: flex-start;
   }
 }

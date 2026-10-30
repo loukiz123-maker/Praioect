@@ -52,7 +52,7 @@ class ApiTests(unittest.TestCase):
             self.assertIn(b"<svg", response.read())
         with urllib.request.urlopen(self.url + "/admin", timeout=3) as response:
             self.assertIn("Панель администратора", response.read().decode())
-        for path in ("/admin.css", "/admin.js"):
+        for path in ("/admin.css", "/admin.js", "/i18n.js"):
             with urllib.request.urlopen(self.url + path, timeout=3) as response:
                 self.assertEqual(response.status, 200)
         with urllib.request.urlopen(self.url + "/city-banner.jpg", timeout=3) as response:

@@ -1119,3 +1119,17 @@
     width: 100%;
   }
 }
+
+@media (max-width: 520px) {
+  .admin-topbar {
+    gap: 8px;
+  }
+  .admin-breadcrumb {
+    display: none;
+  }
+  .admin-top-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+}

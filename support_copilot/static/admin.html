@@ -8,6 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/admin.css" />
+    <script src="/i18n.js" defer></script>
     <script src="/admin.js" defer></script>
   </head>
   <body>
@@ -61,6 +62,22 @@
             ><strong>Администратор</strong>
           </div>
           <div class="admin-top-actions">
+            <div class="language-control">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path
+                  d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"
+                ></path>
+              </svg>
+              <label class="sr-only" for="language-switch"
+                >Язык интерфейса</label
+              >
+              <select id="language-switch" data-i18n-preserve>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+                <option value="kk">Қазақша</option>
+              </select>
+            </div>
             <a href="/" class="back-link">← К разбору</a>
             <button
               type="button"
@@ -330,8 +347,8 @@
                     ></textarea>
                     <p class="review-context" id="admin-draft-help">
                       Сохранённые правки учитываются как обратная связь. После
-                      отправки ответ появится оператору в открытом окне; игроку
-                      он автоматически не отправляется.
+                      отправки ответ появится оператору в его очереди; игроку он
+                      автоматически не отправляется.
                     </p>
                   </div>
                   <p id="review-notice" class="review-notice" role="status"></p>

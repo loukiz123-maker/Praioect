@@ -40,6 +40,7 @@ ASSETS = {
     "/admin/": "admin.html",
     "/app.css": "app.css",
     "/app.js": "app.js",
+    "/i18n.js": "i18n.js",
     "/admin.css": "admin.css",
     "/admin.js": "admin.js",
     "/brand-g.svg": "brand-g.svg",

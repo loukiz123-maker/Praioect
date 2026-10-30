@@ -1,6 +1,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+const { t } = window.CopilotI18n;
 const state = {
   key: null,
   authenticated: false,
@@ -17,7 +18,9 @@ const state = {
   dirty: false,
   busy: false,
   exportController: null,
+  exportedCount: null,
 };
+let sessionCheckSerial = 0;
 const statusNames = {
   waiting: "Ожидает",
   in_progress: "В работе",
@@ -45,6 +48,8 @@ const categoryNames = {
   "report.payment": "Платёж",
   "report.offtopic": "Уточнение вопроса",
 };
+const nameOrCode = (names, code) =>
+  Object.prototype.hasOwnProperty.call(names, code) ? names[code] : code;
 const priorityNames = {
   p0: "P0 · критический",
   p1: "P1 · высокий",
@@ -102,7 +107,7 @@ async function api(path, options = {}) {
 
 function formatDate(seconds) {
   if (!Number.isFinite(seconds)) return "—";
-  return new Intl.DateTimeFormat("ru-RU", {
+  return new Intl.DateTimeFormat(window.CopilotI18n.locale, {
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -111,10 +116,12 @@ function formatDate(seconds) {
 }
 
 function showLogin(message = "") {
+  sessionCheckSerial += 1;
   state.authenticated = false;
   state.key = null;
   state.exportController?.abort();
   state.exportController = null;
+  state.exportedCount = null;
   $("export-feedback").disabled = false;
   $("feedback-status").textContent = "";
   state.requestSerial += 1;
@@ -126,6 +133,7 @@ function showLogin(message = "") {
   state.selected = null;
   state.detail = null;
   state.dirty = false;
+  state.busy = false;
   $("dashboard").hidden = true;
   $("logout-button").hidden = true;
   $("login-screen").hidden = false;
@@ -158,7 +166,9 @@ function showLogin(message = "") {
   $("review-notice").textContent = "";
   $("review-error").textContent = "";
   $("admin-key").value = "";
+  $("login-button").disabled = false;
   $("login-error").textContent = message;
+  setBusy(false);
 }
 
 async function enterDashboard() {
@@ -191,7 +201,11 @@ function renderList() {
   } else {
     $("queue-message").textContent = "";
   }
-  const signature = JSON.stringify([state.filter, state.items]);
+  const signature = JSON.stringify([
+    window.CopilotI18n.language,
+    state.filter,
+    state.items,
+  ]);
   if (state.renderedListSignature === signature) {
     for (const button of container.querySelectorAll(".admin-item")) {
       const selected = button.dataset.reviewId === state.selected;
@@ -222,10 +236,10 @@ function renderList() {
     top.append(id, status);
     const message = document.createElement("span");
     message.className = "admin-item-message";
-    message.textContent = item.preview || "Сообщение не указано";
+    message.textContent = item.preview || t("Сообщение не указано");
     const meta = document.createElement("span");
     meta.className = "admin-item-meta";
-    meta.textContent = `${sourceNames[item.source] || "Проверка"} · ${item.priority ? item.priority.toUpperCase() + " · " : ""}${formatDate(item.created_at)}`;
+    meta.textContent = `${t(sourceNames[item.source] || "Проверка")} · ${item.priority ? item.priority.toUpperCase() + " · " : ""}${formatDate(item.created_at)}`;
     button.append(top, message, meta);
     container.append(button);
   }
@@ -239,6 +253,16 @@ function renderList() {
       $("refresh-queue")
     ).focus({ preventScroll: true });
   }
+}
+
+function renderPagination() {
+  $("queue-page").textContent = state.filteredTotal
+    ? t("{start}–{end} из {total}", {
+        start: state.offset + 1,
+        end: Math.min(state.offset + state.items.length, state.filteredTotal),
+        total: state.filteredTotal,
+      })
+    : t("0 из 0");
 }
 
 async function refreshList() {
@@ -267,9 +291,7 @@ async function refreshList() {
     $("queue-pagination").hidden = data.filtered_total <= data.limit;
     $("queue-previous").disabled = data.offset === 0;
     $("queue-next").disabled = data.offset + data.limit >= data.filtered_total;
-    $("queue-page").textContent = data.filtered_total
-      ? `${data.offset + 1}–${Math.min(data.offset + data.items.length, data.filtered_total)} из ${data.filtered_total}`
-      : "0 из 0";
+    renderPagination();
     $("list-footnote").textContent =
       "Записи старше 14 дней удаляются при следующем обращении к очереди. Данные хранятся только на этом сервере.";
     renderList();
@@ -292,34 +314,40 @@ async function refreshList() {
   }
 }
 
-function renderDetail(detail) {
-  state.detail = detail;
-  state.selected = detail.id;
-  state.dirty = false;
-  $("review-empty").hidden = true;
-  $("review-content").hidden = false;
-  $("review-reference").textContent =
-    `ОБРАЩЕНИЕ #${detail.id.slice(0, 8).toUpperCase()}`;
+function renderDetailText(detail) {
+  $("review-reference").textContent = t("ОБРАЩЕНИЕ #{id}", {
+    id: detail.id.slice(0, 8).toUpperCase(),
+  });
   $("review-status").className = `review-status ${detail.status}`;
   $("review-status").textContent = statusNames[detail.status] || "Неизвестно";
   $("review-source").textContent = sourceNames[detail.source] || "Проверка";
   $("review-priority").textContent =
     priorityNames[detail.result?.priority] || "Не определён";
   $("review-created").textContent = formatDate(detail.created_at);
-  $("review-message").textContent = detail.message || "Сообщение не указано.";
+  // Player messages and rule references are never translated or modified.
+  $("review-message").textContent =
+    detail.message || t("Сообщение не указано.");
   const meta = detail.metadata || {};
   const context = [
-    meta.attachments_indicated
-      ? "В метаданных указаны вложения; их содержимое недоступно."
-      : "Вложения в метаданных не указаны; текст игрока нужно проверить отдельно.",
+    t(
+      meta.attachments_indicated
+        ? "В метаданных указаны вложения; их содержимое недоступно."
+        : "Вложения в метаданных не указаны; текст игрока нужно проверить отдельно.",
+    ),
   ];
-  if (meta.server) context.push(`Сервер/регион: ${meta.server}.`);
-  if (meta.reported_nick) context.push(`Указанный ник: ${meta.reported_nick}.`);
+  if (meta.server)
+    context.push(t("Сервер/регион: {value}.", { value: meta.server }));
+  if (meta.reported_nick)
+    context.push(t("Указанный ник: {value}.", { value: meta.reported_nick }));
   if (meta.rule_refs_raw)
-    context.push(`Указанные ссылки: ${meta.rule_refs_raw}.`);
+    context.push(
+      t("Указанные ссылки: {value}.", { value: meta.rule_refs_raw }),
+    );
   if (detail.result?.category)
     context.push(
-      `Категория помощника: ${categoryNames[detail.result.category] || detail.result.category}.`,
+      t("Категория помощника: {value}.", {
+        value: t(nameOrCode(categoryNames, detail.result.category)),
+      }),
     );
   $("review-context").textContent = context.join(" ");
   let reasons = detail.result?.reasons || [];
@@ -337,13 +365,22 @@ function renderDetail(detail) {
     li.textContent = reason;
     $("review-reasons").append(li);
   }
+}
+
+function renderDetail(detail) {
+  state.detail = detail;
+  state.selected = detail.id;
+  state.dirty = false;
+  $("review-empty").hidden = true;
+  $("review-content").hidden = false;
+  renderDetailText(detail);
   $("operator-draft-section").hidden = !detail.operator_draft;
   $("operator-draft-text").textContent = detail.operator_draft || "";
   $("admin-draft").value =
     detail.admin_draft === null ? detail.operator_draft : detail.admin_draft;
   $("review-notice").textContent =
     detail.status === "resolved"
-      ? "Ответ подготовлен и доступен оператору в открытом окне. Игроку он не отправлен."
+      ? "Ответ подготовлен и доступен оператору, пока доступна его очередь. Игроку он не отправлен."
       : detail.status === "escalated"
         ? "Обращение помечено для дополнительной проверки в общей очереди. Внешних уведомлений нет."
         : "";
@@ -370,7 +407,7 @@ async function selectReview(id, { force = false } = {}) {
   if (
     state.dirty &&
     !force &&
-    !window.confirm("Есть несохранённые правки. Перейти без сохранения?")
+    !window.confirm(t("Есть несохранённые правки. Перейти без сохранения?"))
   )
     return;
   const serial = ++state.selectionSerial;
@@ -415,7 +452,9 @@ async function updateReview(status) {
     state.detail.status === "resolved" &&
     status !== "resolved" &&
     !window.confirm(
-      "Вернуть готовый ответ в проверку? Он перестанет отображаться оператору как готовый. Уже скопированный текст отозвать нельзя.",
+      t(
+        "Вернуть готовый ответ в проверку? Он перестанет отображаться оператору как готовый. Уже скопированный текст отозвать нельзя.",
+      ),
     )
   )
     return;
@@ -436,10 +475,11 @@ async function updateReview(status) {
         body: { version: state.detail.version, status, draft },
       },
     );
+    if (!state.authenticated) return;
     renderDetail(data);
     $("review-notice").textContent =
       status === "resolved"
-        ? "Ответ доступен оператору в открытом окне; игроку он не отправлен. Обратная связь сохранена."
+        ? "Ответ доступен оператору в его очереди; игроку он не отправлен. Обратная связь сохранена."
         : status === "escalated"
           ? "Обращение помечено для дополнительной проверки в общей очереди. Внешних уведомлений нет."
           : "Черновик сохранён на сервере. Правки учитываются в обратной связи; ответ ещё не передан оператору как готовый.";
@@ -462,6 +502,7 @@ async function exportFeedback() {
   if (!state.authenticated || state.exportController) return;
   const controller = new AbortController();
   state.exportController = controller;
+  state.exportedCount = null;
   $("export-feedback").disabled = true;
   $("feedback-status").textContent = "Подготавливаем приватную выгрузку…";
   const timer = window.setTimeout(() => controller.abort(), 60000);
@@ -507,8 +548,11 @@ async function exportFeedback() {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-    $("feedback-status").textContent =
-      `Выгрузка подготовлена: ${count}. Проверьте скачивание и храните файл приватно.`;
+    state.exportedCount = count;
+    $("feedback-status").textContent = t(
+      "Выгрузка подготовлена: {count}. Проверьте скачивание и храните файл приватно.",
+      { count },
+    );
   } catch (error) {
     if (state.authenticated && state.exportController === controller)
       $("feedback-status").textContent =
@@ -530,7 +574,9 @@ async function deleteReview() {
   if (!state.detail || state.busy) return;
   if (
     !window.confirm(
-      "Удалить обращение, ответ и связанную обратную связь? Восстановить их будет нельзя. Уже скачанные копии нужно удалить отдельно.",
+      t(
+        "Удалить обращение, ответ и связанную обратную связь? Восстановить их будет нельзя. Уже скачанные копии нужно удалить отдельно.",
+      ),
     )
   )
     return;
@@ -540,6 +586,7 @@ async function deleteReview() {
       method: "DELETE",
       body: { version: state.detail.version },
     });
+    if (!state.authenticated) return;
     state.detail = null;
     state.selected = null;
     state.dirty = false;
@@ -566,13 +613,16 @@ $("login-form").addEventListener("submit", async (event) => {
     $("admin-key").focus();
     return;
   }
+  sessionCheckSerial += 1;
   state.key = key;
   $("login-button").disabled = true;
   $("login-error").textContent = "";
   try {
     await api("/admin/api/session");
+    if (state.key !== key) return;
     await enterDashboard();
   } catch (error) {
+    if (state.key !== key) return;
     state.key = null;
     $("login-error").textContent =
       error instanceof TypeError
@@ -585,7 +635,7 @@ $("login-form").addEventListener("submit", async (event) => {
 $("logout-button").addEventListener("click", () => {
   if (
     state.dirty &&
-    !window.confirm("Есть несохранённые правки. Выйти без сохранения?")
+    !window.confirm(t("Есть несохранённые правки. Выйти без сохранения?"))
   )
     return;
   showLogin();
@@ -627,6 +677,31 @@ $("reload-review").addEventListener("click", () => {
   if (state.detail) selectReview(state.detail.id);
 });
 $("delete-review").addEventListener("click", deleteReview);
+document.addEventListener("copilot:languagechange", () => {
+  if (!state.authenticated) return;
+  renderList();
+  renderPagination();
+  if (state.detail) renderDetailText(state.detail);
+  if (state.exportedCount !== null)
+    $("feedback-status").textContent = t(
+      "Выгрузка подготовлена: {count}. Проверьте скачивание и храните файл приватно.",
+      { count: state.exportedCount },
+    );
+});
+
+// Returning to the operator view is same-tab navigation. Protect an unsaved
+// administrator draft (and any save currently in flight) from accidental loss.
+window.addEventListener("beforeunload", (event) => {
+  if (!state.dirty && !state.busy) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+// A browser may retain pages in its back/forward cache. Erase the admin key
+// and visible player data even then; the operator's tab-scoped queue is separate.
+window.addEventListener("pagehide", () => showLogin());
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) checkAdminSession();
+});
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refreshList();
 });
@@ -636,14 +711,19 @@ window.setInterval(() => {
 
 // A normal installation returns 401 here; the preview proxy can supply a
 // temporary isolated demonstration session without exposing its key.
-api("/admin/api/session")
-  .then(({ response }) => {
-    if (response.headers.get("X-Admin-Preview") === "true")
-      $("preview-warning").hidden = false;
-    return enterDashboard();
-  })
-  .catch((error) => {
-    if (error.status === 503)
-      $("login-error").textContent =
-        "Очередь администратора недоступна. Проверьте запуск сервера и папку данных.";
-  });
+function checkAdminSession() {
+  const serial = ++sessionCheckSerial;
+  api("/admin/api/session")
+    .then(({ response }) => {
+      if (serial !== sessionCheckSerial) return;
+      if (response.headers.get("X-Admin-Preview") === "true")
+        $("preview-warning").hidden = false;
+      return enterDashboard();
+    })
+    .catch((error) => {
+      if (serial === sessionCheckSerial && error.status === 503)
+        $("login-error").textContent =
+          "Очередь администратора недоступна. Проверьте запуск сервера и папку данных.";
+    });
+}
+checkAdminSession();

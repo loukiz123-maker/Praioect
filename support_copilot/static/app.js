@@ -1,7 +1,14 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = { kind: "complaint", items: [], current: null, busy: false };
+const { t } = window.CopilotI18n;
+const state = {
+  kind: "complaint",
+  items: [],
+  current: null,
+  busy: false,
+  rulesLoaded: null,
+};
 const categoryNames = {
   "complaint.insult": "Оскорбление",
   "complaint.cheat": "Читы и ПО",
@@ -20,11 +27,11 @@ const categoryNames = {
 };
 const languages = {
   ru: "Русский",
-  kk: "Қазақша",
-  uz: "O‘zbekcha",
-  en: "English",
-  es: "Español",
-  pt: "Português",
+  kk: "Казахский",
+  uz: "Узбекский",
+  en: "Английский",
+  es: "Испанский",
+  pt: "Португальский",
   und: "Не определён",
 };
 const priorities = {
@@ -33,6 +40,8 @@ const priorities = {
   p2: "Обычный",
   p3: "Низкий",
 };
+const nameOrCode = (names, code) =>
+  Object.prototype.hasOwnProperty.call(names, code) ? names[code] : code;
 const examples = {
   insult: {
     kind: "complaint",
@@ -66,7 +75,165 @@ function setKind(kind) {
   });
 }
 
+// The operator's queue is scoped to this browser tab, not to the admin account.
+// It can contain player text and capability receipts: never store the admin key.
+const SESSION_KEY = "support-copilot.operator-session.v1";
+const REVIEW_STATUSES = new Set([
+  "not_sent",
+  "not_required",
+  "not_found",
+  ...QUEUED_STATUSES,
+]);
+
+function persistSession() {
+  try {
+    const items = state.items.map((item) => ({
+      id: item.id,
+      text: item.text,
+      payload: item.payload,
+      receipt: item.receipt,
+      result: item.result,
+      originalResult: item.originalResult,
+      editBuffer: item.editBuffer,
+      edited: item.edited,
+      manualRequested: item.manualRequested,
+      sentDraft: item.sentDraft,
+      reviewStatus: item.reviewStatus,
+      reviewError: item.reviewError,
+      reviewErrorKind: item.reviewErrorKind,
+      adminReply: item.adminReply,
+    }));
+    const snapshot = {
+      version: 1,
+      current: state.current,
+      items,
+      form: {
+        kind: state.kind,
+        message: $("message").value,
+        attachments: $("attachments").value,
+        reporter: $("reporter").value,
+      },
+    };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+    $("storage-warning").hidden = true;
+    return true;
+  } catch (_) {
+    // Storage can be unavailable or full; never claim this snapshot is saved.
+    $("storage-warning").hidden = false;
+    return false;
+  }
+}
+
+function restoreSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const snapshot = JSON.parse(raw);
+    if (snapshot?.version !== 1 || !Array.isArray(snapshot.items))
+      throw new Error("invalid session");
+    const ids = new Set();
+    state.items = snapshot.items.map((item) => {
+      const validResult = (value) =>
+        value === null ||
+        (isValidResult(value) &&
+          value.draft_reply.cited.every((entry) => typeof entry === "string") &&
+          value.reasons.every((entry) => typeof entry === "string"));
+      if (
+        !item ||
+        !Number.isSafeInteger(item.id) ||
+        item.id < 1 ||
+        ids.has(item.id) ||
+        typeof item.text !== "string" ||
+        !item.payload ||
+        !["complaint", "report"].includes(item.payload.kind) ||
+        !Array.isArray(item.payload.messages) ||
+        !/^[0-9a-f]{64}$/.test(item.receipt) ||
+        !validResult(item.result) ||
+        !validResult(item.originalResult) ||
+        !REVIEW_STATUSES.has(item.reviewStatus) ||
+        typeof item.editBuffer !== "string" ||
+        typeof item.sentDraft !== "string"
+      )
+        throw new Error("invalid item");
+      ids.add(item.id);
+      return {
+        ...item,
+        edited: item.edited === true,
+        manualRequested: item.manualRequested === true,
+        reviewError:
+          typeof item.reviewError === "string" ? item.reviewError : "",
+        reviewErrorKind: ["conflict", "uncertain"].includes(
+          item.reviewErrorKind,
+        )
+          ? item.reviewErrorKind
+          : null,
+        adminReply:
+          typeof item.adminReply === "string" ? item.adminReply : null,
+        // In-flight operations cannot be resumed after a navigation.
+        reviewPending: false,
+        polling: false,
+        pollError: false,
+      };
+    });
+    state.current = ids.has(snapshot.current)
+      ? snapshot.current
+      : (state.items[state.items.length - 1]?.id ?? null);
+    const form = snapshot.form;
+    if (form && typeof form === "object") {
+      state.kind = form.kind === "report" ? "report" : "complaint";
+      if (typeof form.message === "string") $("message").value = form.message;
+      if (typeof form.attachments === "string")
+        $("attachments").value = form.attachments;
+      if (typeof form.reporter === "string")
+        $("reporter").value = form.reporter;
+    }
+  } catch (_) {
+    // A corrupt or inaccessible snapshot must not break the application.
+    state.items = [];
+    state.current = null;
+    $("storage-warning").hidden = false;
+  }
+}
+
+function clearQueue() {
+  if (!state.items.length) return;
+  if (state.busy || state.items.some((item) => item.reviewPending)) {
+    $("form-error").textContent =
+      "Дождитесь завершения текущей операции перед очисткой очереди.";
+    $("form-error").scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (
+    !window.confirm(
+      t(
+        "Очистить очередь в этой вкладке? Черновики и доступ к ответам здесь будут удалены. Обращения, переданные администратору, останутся на сервере.",
+      ),
+    )
+  )
+    return;
+  state.items = [];
+  state.current = null;
+  if (!persistSession()) {
+    // If replacing a full snapshot failed, try to remove the old copy as well.
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch (_) {
+      /* unavailable */
+    }
+  }
+  renderResult();
+  renderQueue();
+}
+
 function pluralForm(count, one, few, many) {
+  const language = window.CopilotI18n.language;
+  const nouns = {
+    обращение: ["ticket", "tickets", "өтініш"],
+    символ: ["character", "characters", "таңба"],
+    пункт: ["clause", "clauses", "тармақ"],
+  };
+  if (language === "kk" && nouns[one]) return nouns[one][2];
+  if (language === "en" && nouns[one]) return nouns[one][count === 1 ? 0 : 1];
   const n = count % 100;
   const last = count % 10;
   if (n >= 11 && n <= 14) return many;
@@ -112,6 +279,7 @@ function updateCounts() {
   $("stat-human").append(humanLabel);
   $("sidebar-count").textContent = String(count);
   $("queue-total").textContent = labelCount(count);
+  $("clear-queue").disabled = !count;
   $("queue-empty").hidden = count > 0;
 }
 
@@ -144,6 +312,7 @@ function renderQueue() {
     button.className = `queue-item${item.id === state.current ? " current" : ""}`;
     button.addEventListener("click", () => {
       state.current = item.id;
+      persistSession();
       renderResult();
       renderQueue();
       scrollToResult();
@@ -157,7 +326,7 @@ function renderQueue() {
     title.textContent = item.text;
     const subtitle = document.createElement("small");
     subtitle.textContent = item.result
-      ? `${categoryNames[item.result.category] || item.result.category} · ${item.result.priority.toUpperCase()}`
+      ? `${t(nameOrCode(categoryNames, item.result.category))} · ${item.result.priority.toUpperCase()}`
       : "Автоматический разбор не выполнен";
     copy.append(title, subtitle);
     const status = document.createElement("span");
@@ -196,7 +365,7 @@ function renderHandoff(item) {
           ? "Администратор пометил обращение для дополнительной проверки."
           : "Администратор взял обращение в работу.";
     hint =
-      "Ответ появится здесь, пока страница открыта. Игроку он автоматически не отправляется.";
+      "Ответ появится здесь, пока доступна очередь в этой вкладке. Игроку он автоматически не отправляется.";
     if (item.result && item.editBuffer !== item.sentDraft) {
       label = "Передать правку администратору";
     } else {
@@ -241,10 +410,10 @@ function renderHandoff(item) {
   $("admin-answer-box").hidden =
     item.reviewStatus !== "resolved" || typeof item.adminReply !== "string";
   $("use-admin-answer").hidden = !item.result;
-  if (
-    typeof item.adminReply === "string" &&
-    $("admin-answer").value !== item.adminReply
-  ) {
+  if (typeof item.adminReply !== "string") {
+    $("admin-answer").value = "";
+    $("admin-answer-status").textContent = "";
+  } else if ($("admin-answer").value !== item.adminReply) {
     $("admin-answer").value = item.adminReply;
     $("admin-answer-status").textContent = "";
   }
@@ -269,29 +438,62 @@ function renderResult() {
   $("failure-content").hidden = !item || Boolean(item.result);
   $("review-section").hidden = !item;
   $("json-wrapper").hidden = !item?.result;
-  if (!item) return;
+  if (!item?.result) {
+    // Do not leave a previous ticket or reply in hidden controls after clearing
+    // the queue or selecting a failed analysis.
+    $("source-text").textContent = "";
+    $("draft-text").value = "";
+    $("result-json").textContent = "";
+    $("citation-list").replaceChildren();
+    $("reason-list").replaceChildren();
+  }
+  if (!item) {
+    $("failure-source-text").textContent = "";
+    $("admin-answer").value = "";
+    $("admin-answer-status").textContent = "";
+    $("result-announcement").textContent = "";
+    $("admin-answer-box").hidden = true;
+    return;
+  }
   if (!item.result) {
     $("failure-source-text").textContent = item.text;
-    $("result-announcement").textContent =
-      `Обращение ${item.id}: автоматический разбор не выполнен. Проверьте состояние передачи администратору.`;
+    $("result-announcement").textContent = t(
+      "Обращение {id}: автоматический разбор не выполнен. Проверьте состояние передачи администратору.",
+      { id: item.id },
+    );
     renderHandoff(item);
     return;
   }
   const result = item.result;
+  $("failure-source-text").textContent = "";
   $("source-text").textContent = item.text;
-  $("result-id").textContent = `РАЗБОР ${String(item.id).padStart(2, "0")}`;
+  $("result-id").textContent = t("РАЗБОР {id}", {
+    id: String(item.id).padStart(2, "0"),
+  });
   $("duplicate-pill").hidden = !result.is_spam_or_duplicate;
-  $("result-category").textContent =
-    categoryNames[result.category] || result.category;
+  $("result-category").textContent = nameOrCode(categoryNames, result.category);
   $("result-code").textContent = result.category;
   $("result-priority").textContent = result.priority.toUpperCase();
   $("result-priority").className = `priority-value ${result.priority}`;
   $("result-priority-desc").textContent = priorities[result.priority] || "";
-  $("result-language").textContent = languages[result.lang] || result.lang;
-  $("result-confidence").textContent =
-    `Оценка алгоритма: ${Math.round(result.confidence * 100)}% · не точность`;
-  $("result-announcement").textContent =
-    `Разбор ${item.id} готов. Категория: ${categoryNames[result.category] || result.category}. Приоритет: ${priorities[result.priority] || result.priority}. ${result.needs_human ? "Нужна проверка человеком." : "Можно уточнить обращение."}`;
+  $("result-language").textContent = nameOrCode(languages, result.lang);
+  $("result-confidence").textContent = t(
+    "Оценка алгоритма: {value}% · не точность",
+    { value: Math.round(result.confidence * 100) },
+  );
+  $("result-announcement").textContent = t(
+    "Разбор {id} готов. Категория: {category}. Приоритет: {priority}. {review}",
+    {
+      id: item.id,
+      category: t(nameOrCode(categoryNames, result.category)),
+      priority: t(nameOrCode(priorities, result.priority)),
+      review: t(
+        result.needs_human
+          ? "Нужна проверка человеком."
+          : "Можно уточнить обращение.",
+      ),
+    },
+  );
   $("draft-text").value = item.editBuffer;
   resizeDraft();
   if (result.lang && result.lang !== "und") $("draft-text").lang = result.lang;
@@ -300,7 +502,7 @@ function renderResult() {
     item.editBuffer !== result.draft_reply.text
       ? "Есть несохранённая правка"
       : item.edited
-        ? "Правка сохранена в окне"
+        ? "Правка сохранена в этой вкладке"
         : "";
   const citations = $("citation-list");
   citations.replaceChildren();
@@ -313,7 +515,7 @@ function renderResult() {
   } else {
     const tag = document.createElement("span");
     tag.className = "muted-tag";
-    tag.textContent = "Нет подтверждённых";
+    tag.textContent = t("Нет подтверждённых");
     citations.append(tag);
   }
   $("result-evidence").textContent = result.extracted.has_evidence
@@ -336,19 +538,19 @@ function renderResult() {
 function isValidResult(result) {
   return Boolean(
     result &&
-      typeof result === "object" &&
-      typeof result.lang === "string" &&
-      typeof result.category === "string" &&
-      ["p0", "p1", "p2", "p3"].includes(result.priority) &&
-      typeof result.is_spam_or_duplicate === "boolean" &&
-      result.extracted &&
-      typeof result.extracted.has_evidence === "boolean" &&
-      result.draft_reply &&
-      typeof result.draft_reply.text === "string" &&
-      Array.isArray(result.draft_reply.cited) &&
-      typeof result.needs_human === "boolean" &&
-      Number.isFinite(result.confidence) &&
-      Array.isArray(result.reasons),
+    typeof result === "object" &&
+    typeof result.lang === "string" &&
+    typeof result.category === "string" &&
+    ["p0", "p1", "p2", "p3"].includes(result.priority) &&
+    typeof result.is_spam_or_duplicate === "boolean" &&
+    result.extracted &&
+    typeof result.extracted.has_evidence === "boolean" &&
+    result.draft_reply &&
+    typeof result.draft_reply.text === "string" &&
+    Array.isArray(result.draft_reply.cited) &&
+    typeof result.needs_human === "boolean" &&
+    Number.isFinite(result.confidence) &&
+    Array.isArray(result.reasons),
   );
 }
 
@@ -420,6 +622,7 @@ function hasQueuedResponse(response) {
 function addItem(item) {
   state.items.push(item);
   state.current = item.id;
+  persistSession();
   renderResult();
   renderQueue();
   if (window.innerWidth <= 950) scrollToResult();
@@ -549,6 +752,7 @@ async function sendTicket(event) {
 async function refreshReview(item, { force = false } = {}) {
   if ((!force && !QUEUED_STATUSES.has(item.reviewStatus)) || item.polling)
     return;
+  const previous = [item.reviewStatus, item.adminReply, item.reviewError];
   item.polling = true;
   try {
     const response = await fetchWithTimeout(
@@ -592,14 +796,22 @@ async function refreshReview(item, { force = false } = {}) {
         data.status === "resolved" &&
         currentItem() === item
       ) {
-        $("result-announcement").textContent =
-          `Администратор подготовил ответ на обращение ${item.id}.`;
+        $("result-announcement").textContent = t(
+          "Администратор подготовил ответ на обращение {id}.",
+          { id: item.id },
+        );
       }
     }
   } catch (_) {
     item.pollError = true;
   } finally {
     item.polling = false;
+    if (
+      item.reviewStatus !== previous[0] ||
+      item.adminReply !== previous[1] ||
+      item.reviewError !== previous[2]
+    )
+      persistSession();
     if (currentItem() === item) renderHandoff(item);
     renderQueue();
   }
@@ -635,6 +847,7 @@ async function handoffCurrent() {
       checkHealth();
   } finally {
     item.reviewPending = false;
+    persistSession();
     if (currentItem() === item) renderHandoff(item);
     renderQueue();
   }
@@ -690,19 +903,21 @@ function bindEvents() {
     },
     { passive: true },
   );
-  document
-    .querySelectorAll(".kind-button")
-    .forEach((button) =>
-      button.addEventListener("click", () => setKind(button.dataset.kind)),
-    );
+  document.querySelectorAll(".kind-button").forEach((button) =>
+    button.addEventListener("click", () => {
+      setKind(button.dataset.kind);
+      persistSession();
+    }),
+  );
   document.querySelectorAll("[data-example]").forEach((button) =>
     button.addEventListener("click", () => {
       const example = examples[button.dataset.example];
       setKind(example.kind);
-      $("message").value = example.text;
+      $("message").value = t(example.text);
       $("attachments").value = example.attachments;
       $("reporter").value = "";
       updateCharacterCount();
+      persistSession();
       $("form-error").textContent = "";
       $("message").focus();
     }),
@@ -710,6 +925,7 @@ function bindEvents() {
   $("message").addEventListener("input", updateCharacterCount);
   $("triage-form").addEventListener("input", () => {
     $("form-error").textContent = "";
+    persistSession();
   });
   $("clear-form").addEventListener("click", () => {
     $("message").value = "";
@@ -718,6 +934,7 @@ function bindEvents() {
     $("form-error").textContent = "";
     setKind("complaint");
     updateCharacterCount();
+    persistSession();
     $("message").focus();
   });
   $("message").addEventListener("keydown", (event) => {
@@ -729,6 +946,7 @@ function bindEvents() {
     const item = currentItem();
     if (!item?.result) return;
     item.editBuffer = $("draft-text").value;
+    persistSession();
     resizeDraft();
     $("draft-status").textContent =
       item.editBuffer !== item.result.draft_reply.text
@@ -741,7 +959,8 @@ function bindEvents() {
     if (!item?.result) return;
     item.result.draft_reply.text = item.editBuffer;
     item.edited = true;
-    $("draft-status").textContent = "Правка сохранена только в этом окне";
+    persistSession();
+    $("draft-status").textContent = "Правка сохранена только в этой вкладке";
     $("result-json").textContent = JSON.stringify(item.result, null, 2);
   });
   $("copy-draft").addEventListener("click", () =>
@@ -752,21 +971,60 @@ function bindEvents() {
     const item = currentItem();
     if (!item?.result || typeof item.adminReply !== "string") return;
     item.editBuffer = item.adminReply;
+    persistSession();
     $("draft-text").value = item.adminReply;
     resizeDraft();
     $("draft-status").textContent =
-      "Ответ администратора вставлен; проверьте и сохраните правку в окне";
+      "Ответ администратора вставлен; проверьте и сохраните правку в этой вкладке";
     $("draft-text").focus();
   });
   $("copy-admin-answer").addEventListener("click", () =>
     copyText($("admin-answer"), $("admin-answer-status")),
   );
+  $("clear-queue").addEventListener("click", clearQueue);
+  window.addEventListener("pagehide", persistSession);
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.busy && !state.items.some((item) => item.reviewPending)) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+  document.addEventListener("copilot:languagechange", () => {
+    updateCharacterCount();
+    renderQueue();
+    renderResult();
+    renderRuleCount();
+  });
+  document.querySelectorAll('a[href="/admin"]').forEach((link) => {
+    link.addEventListener("click", (event) => {
+      if (!state.busy && !state.items.some((item) => item.reviewPending))
+        return;
+      event.preventDefault();
+      $("form-error").textContent =
+        "Дождитесь завершения текущей операции перед переходом в админку.";
+      $("form-error").scrollIntoView({ block: "nearest" });
+    });
+  });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) state.items.forEach((item) => refreshReview(item));
   });
   window.setInterval(() => {
     if (!document.hidden) state.items.forEach((item) => refreshReview(item));
   }, 5000);
+}
+
+function renderRuleCount() {
+  if (!Number.isFinite(state.rulesLoaded)) return;
+  $("stat-rules").replaceChildren(
+    document.createTextNode(`${state.rulesLoaded} `),
+  );
+  const label = document.createElement("em");
+  label.textContent = pluralForm(
+    state.rulesLoaded,
+    "пункт",
+    "пункта",
+    "пунктов",
+  );
+  $("stat-rules").append(label);
 }
 
 async function checkHealth() {
@@ -781,24 +1039,20 @@ async function checkHealth() {
       ? "Авторазбор недоступен"
       : "Сервис работает";
     $("connection").classList.toggle("offline", degraded);
-    $("stat-rules").replaceChildren(
-      document.createTextNode(`${health.rules_loaded} `),
-    );
-    const label = document.createElement("em");
-    label.textContent = pluralForm(
-      health.rules_loaded,
-      "пункт",
-      "пункта",
-      "пунктов",
-    );
-    $("stat-rules").append(label);
+    state.rulesLoaded = health.rules_loaded;
+    renderRuleCount();
   } catch (_) {
     $("connection").querySelector("span").textContent = "Нет связи с сервисом";
     $("connection").classList.add("offline");
   }
 }
 
+restoreSession();
 bindNavigation();
 bindEvents();
-updateCounts();
+setKind(state.kind);
+updateCharacterCount();
+renderQueue();
+renderResult();
+state.items.forEach((item) => refreshReview(item));
 checkHealth();
