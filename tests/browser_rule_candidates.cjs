@@ -76,6 +76,7 @@ if (!key || !executablePath)
       ru: "Возможные пункты по указанному номеру",
       en: "Possible clauses matching the reported number",
       kk: "Көрсетілген нөмірге сәйкес ықтимал тармақтар",
+      uz: "Ko‘rsatilgan raqamga mos bo‘lishi mumkin bo‘lgan bandlar",
     };
     for (const width of [320, 800, 1440]) {
       await page.setViewport({ width, height: 900 });
@@ -133,7 +134,7 @@ if (!key || !executablePath)
     );
     assert.deepEqual(errors, []);
     console.log(
-      "Private rule candidates, original excerpts, RU/EN/KK, three widths and axe: passed",
+      "Private rule candidates, original excerpts, RU/EN/KK/UZ, three widths and axe: passed",
     );
   } finally {
     await browser.close();

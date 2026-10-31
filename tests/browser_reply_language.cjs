@@ -354,7 +354,7 @@ async function openReview(page, id, expected) {
     await page.addScriptTag({ path: require.resolve("axe-core/axe.min.js") });
     for (const width of [320, 1440]) {
       await page.setViewport({ width, height: 900 });
-      for (const language of ["ru", "en", "kk"]) {
+      for (const language of ["ru", "en", "kk", "uz"]) {
         await page.select("#language-switch", language);
         const geometry = await page.evaluate(() => ({
           page: document.documentElement.scrollWidth,

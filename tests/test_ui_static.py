@@ -146,22 +146,29 @@ class TranslationCoverageTests(unittest.TestCase):
     def setUpClass(cls):
         cls.script = (STATIC / "i18n.js").read_text(encoding="utf-8")
         quoted = r'"(?:[^"\\]|\\.)*"'
-        pattern = rf'^\s*({quoted}|[\w$]+)\s*:\s*\[\s*({quoted})\s*,\s*({quoted})\s*,?\s*\]'
-        rows = re.findall(pattern, cls.script, re.MULTILINE)
+        pattern = rf'^\s*({quoted}|[\w$]+)\s*:\s*\[\s*({quoted})\s*,\s*({quoted})\s*,\s*({quoted})\s*,?\s*\]'
+        dictionary = cls.script.split('  const LANGUAGE_KEY', 1)[0]
+        rows = re.findall(pattern, dictionary, re.MULTILINE)
+        all_keys = re.findall(rf'^\s*({quoted}|[\w$]+)\s*:\s*\[', dictionary, re.MULTILINE)
         cls.messages = {
-            (json.loads(key) if key.startswith('"') else key): (json.loads(en), json.loads(kk))
-            for key, en, kk in rows
+            (json.loads(key) if key.startswith('"') else key): (json.loads(en), json.loads(kk), json.loads(uz))
+            for key, en, kk, uz in rows
         }
-        if len(rows) != len(cls.messages):
-            raise AssertionError("Duplicate interface translation keys")
+        if len(rows) != len(all_keys) or len(rows) != len(cls.messages):
+            raise AssertionError("Missing translation or duplicate interface translation key")
 
     def test_both_pages_have_accessible_language_controls_and_translated_static_text(self):
         for filename in ("index.html", "admin.html"):
             with self.subTest(page=filename):
                 markup = Markup()
-                markup.feed((STATIC / filename).read_text(encoding="utf-8"))
+                html = (STATIC / filename).read_text(encoding="utf-8")
+                markup.feed(html)
                 by_id = {attrs["id"]: (tag, attrs) for tag, attrs in markup.elements if "id" in attrs}
                 self.assertEqual(by_id["language-switch"][0], "select")
+                selector = re.search(r'<select\b[^>]*id="language-switch"[^>]*>(.*?)</select>', html, re.DOTALL)
+                self.assertIsNotNone(selector)
+                self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', selector.group(1)), ["ru", "en", "kk", "uz"])
+                self.assertIn('<option value="uz" lang="uz">O‘zbekcha</option>', selector.group(1))
                 self.assertTrue(any(tag == "label" and attrs.get("for") == "language-switch" for tag, attrs in markup.elements))
                 scripts = [attrs.get("src") for tag, attrs in markup.elements if tag == "script"]
                 self.assertLess(scripts.index("/i18n.js"), len(scripts) - 1)

@@ -107,12 +107,36 @@ async function api(path, options = {}) {
 
 function formatDate(seconds) {
   if (!Number.isFinite(seconds)) return "—";
+  const date = new Date(seconds * 1000);
+  if (window.CopilotI18n.language === "uz") {
+    // Some browsers fall back to labels such as "M10" for Uzbek months.
+    const months = [
+      "yanvar",
+      "fevral",
+      "mart",
+      "aprel",
+      "may",
+      "iyun",
+      "iyul",
+      "avgust",
+      "sentabr",
+      "oktabr",
+      "noyabr",
+      "dekabr",
+    ];
+    const time = new Intl.DateTimeFormat("uz-UZ", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(date);
+    return `${date.getDate()} ${months[date.getMonth()]}, ${time}`;
+  }
   return new Intl.DateTimeFormat(window.CopilotI18n.locale, {
     day: "numeric",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(seconds * 1000));
+  }).format(date);
 }
 
 function canGenerateDraft(detail) {

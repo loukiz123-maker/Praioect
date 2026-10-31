@@ -231,10 +231,11 @@ function clearQueue() {
 function pluralForm(count, one, few, many) {
   const language = window.CopilotI18n.language;
   const nouns = {
-    обращение: ["ticket", "tickets", "өтініш"],
-    символ: ["character", "characters", "таңба"],
-    пункт: ["clause", "clauses", "тармақ"],
+    обращение: ["ticket", "tickets", "өтініш", "murojaat"],
+    символ: ["character", "characters", "таңба", "belgi"],
+    пункт: ["clause", "clauses", "тармақ", "band"],
   };
+  if (language === "uz" && nouns[one]) return nouns[one][3];
   if (language === "kk" && nouns[one]) return nouns[one][2];
   if (language === "en" && nouns[one]) return nouns[one][count === 1 ? 0 : 1];
   const n = count % 100;

@@ -186,6 +186,7 @@ async function checkAccessibility(page, expectedLabels) {
       ru: { selector: "#select-uzbek-reply", label: "Узбекский" },
       en: { selector: "#select-uzbek-reply", label: "Uzbek" },
       kk: { selector: "#select-uzbek-reply", label: "Өзбек тілі" },
+      uz: { selector: "#select-uzbek-reply", label: "O‘zbek tili" },
     });
     assert.equal(await value(page, "#reply-language"), "uz");
     assert.equal(await text(page, "#source-text"), operatorText);
@@ -310,6 +311,7 @@ async function checkAccessibility(page, expectedLabels) {
       ru: { selector: "#generate-uzbek", label: "Ответ на узбекском" },
       en: { selector: "#generate-uzbek", label: "Draft in Uzbek" },
       kk: { selector: "#generate-uzbek", label: "Өзбекше жауап жобасы" },
+      uz: { selector: "#generate-uzbek", label: "O‘zbekcha javob" },
     });
     assert.equal(await value(page, "#admin-draft"), uzbekDraft);
     assert.equal(await value(page, "#admin-reply-language"), "uz");
