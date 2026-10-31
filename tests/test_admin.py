@@ -311,18 +311,21 @@ class AdminApiTests(unittest.TestCase):
         self.assertFalse(any(rule["number"] == "5.1" for rule in candidates["items"]))
 
     def test_manual_flag_and_retry_are_idempotent(self):
-        payload = ticket("Привет", kind="report")
+        payload = ticket("Привет", kind="report", reporter_hash="synthetic-reporter", ticket_id="synthetic-ticket")
         receipt = new_receipt()
         status, headers, result = self.triage(payload, receipt)
         self.assertEqual(status, 200)
         self.assertFalse(result["needs_human"])
         self.assertEqual(headers["X-Review-Status"], "not_required")
+        events_before = {key: tuple(events) for key, events in self.service.duplicates._events.items()}
         body = {"ticket": payload, "source": "manual", "result": result, "draft": "Ручная правка"}
         self.assertEqual(self.request("/reviews/request", method="POST", value=body, receipt=receipt)[0], 201)
         self.assertEqual(self.request("/reviews/request", method="POST", value=body, receipt=receipt)[0], 200)
+        self.assertEqual({key: tuple(events) for key, events in self.service.duplicates._events.items()}, events_before)
         self.assertEqual(self.admin_list()["counts"]["waiting"], 1)
         review_id = self.admin_list()["items"][0]["id"]
         detail = self.request(f"/admin/api/reviews/{review_id}", key=TEST_KEY)[2]
+        self.assertEqual(detail["result"], result)
         self.assertEqual(detail["operator_draft"], "Ручная правка")
         self.assertEqual(detail["version"], 1)
         body["draft"] = "Обновлённая ручная правка"
@@ -511,6 +514,49 @@ class AdminApiTests(unittest.TestCase):
         detail_id = self.admin_list()["items"][0]["id"]
         self.assertIsNone(self.request(f"/admin/api/reviews/{detail_id}", key=TEST_KEY)[2]["result"])
 
+    def test_manual_client_cannot_forge_an_assistant_result_or_feedback(self):
+        payload = ticket("Игрок оскорбил меня в чате", reporter_hash="synthetic-reporter")
+        forged = self.service.triage(payload)
+        forged["draft_reply"]["text"] += "\n\nВЫДУМАННОЕ УТВЕРЖДЕНИЕ."
+        self.assertTrue(server_module.valid_result(forged, self.service))  # The real quotation is still present.
+        before = {key: tuple(events) for key, events in self.service.duplicates._events.items()}
+        body = {"ticket": payload, "source": "manual", "result": forged}
+        self.assertEqual(self.request("/reviews/request", method="POST", value=body, receipt=new_receipt())[0], 201)
+        self.assertEqual({key: tuple(events) for key, events in self.service.duplicates._events.items()}, before)
+        review_id = self.admin_list()["items"][0]["id"]
+        detail = self.queue.get(review_id)
+        self.assertIsNone(detail["result"])
+        self.assertEqual(detail["operator_draft"], forged["draft_reply"]["text"])
+        self.assertEqual(self.request(
+            f"/admin/api/reviews/{review_id}", method="POST", key=TEST_KEY,
+            value={"version": 1, "status": "resolved", "draft": "Проверенный человеком ответ"},
+        )[0], 200)
+        row = self.feedback()[0][0]
+        self.assertIsNone(row["assistant"])
+        self.assertEqual(row["feedback_type"], "human_reply")
+
+    def test_existing_number_with_forged_excerpt_is_queued_as_a_failure(self):
+        payload = ticket("Игрок оскорбил меня в чате")
+        unsafe = self.service.triage(payload)
+        self.assertEqual(unsafe["draft_reply"]["cited"], ["2.1"])
+        unsafe["draft_reply"]["text"] = "Пункт 2.1: выдуманная формулировка."
+        with patch.object(self.service, "triage", return_value=unsafe):
+            status, headers, body = self.triage(payload, new_receipt())
+        self.assertEqual(status, 500)
+        self.assertEqual(headers["X-Review-Status"], "queued")
+        self.assertNotIn("выдуманная", json.dumps(body, ensure_ascii=False))
+        detail_id = self.admin_list()["items"][0]["id"]
+        detail = self.request(f"/admin/api/reviews/{detail_id}", key=TEST_KEY)[2]
+        self.assertIsNone(detail["result"])
+        self.assertEqual(detail["source"], "failure")
+
+    def test_invalid_numeric_body_is_not_added_to_the_queue(self):
+        payload = ticket("hello", kind="report", ticket_id=float("nan"))
+        status, headers, _ = self.triage(payload, new_receipt())
+        self.assertEqual(status, 400)
+        self.assertNotIn("X-Review-Status", headers)
+        self.assertEqual(self.admin_list()["counts"]["waiting"], 0)
+
     def test_independent_safety_guard_routes_critical_result_to_human(self):
         payload = ticket("Привет", kind="report")
         unsafe = self.service.triage(payload)
@@ -534,6 +580,40 @@ class AdminApiTests(unittest.TestCase):
         self.assertEqual(self.admin_list()["counts"]["waiting"], 1)
         self.assertEqual(self.request("/reviews/status", receipt=receipt)[2]["status"], "waiting")
         self.assertEqual(self.triage(payload={"kind": "invalid"})[0], 400)
+
+    def test_manual_handoff_survives_replay_failure_without_trusting_the_result(self):
+        payload = ticket("Привет", kind="report")
+        original = self.service.triage(payload)
+        body = {"ticket": payload, "source": "manual", "result": original, "draft": "Текст оператора"}
+        with patch.object(self.service, "triage", side_effect=RuntimeError("private exception")):
+            status, _, response = self.request("/reviews/request", method="POST", value=body, receipt=new_receipt())
+        self.assertEqual(status, 201)
+        self.assertNotIn("private exception", json.dumps(response))
+        detail = self.queue.get(self.admin_list()["items"][0]["id"])
+        self.assertIsNone(detail["result"])
+        self.assertEqual(detail["operator_draft"], "Текст оператора")
+
+    def test_offline_catalog_keeps_client_text_untrusted_but_delivers_it(self):
+        payload = ticket("Игрок оскорбил меня в чате")
+        unverified = self.service.triage(payload)
+        unverified["draft_reply"]["text"] = "Пункт 2.1: выдуманная формулировка."
+        self.server.service = None
+        previous_ids = set()
+        for explicit_draft in (None, "Правка оператора"):
+            with self.subTest(explicit_draft=explicit_draft):
+                body = {"ticket": payload, "source": "manual", "result": unverified}
+                if explicit_draft is not None:
+                    body["draft"] = explicit_draft
+                status, _, _ = self.request("/reviews/request", method="POST", value=body, receipt=new_receipt())
+                self.assertEqual(status, 201)
+                ids = {item["id"] for item in self.admin_list()["items"]}
+                new_ids = ids - previous_ids
+                self.assertEqual(len(new_ids), 1)
+                detail = self.queue.get(new_ids.pop())
+                previous_ids = ids
+                self.assertIsNone(detail["result"])
+                self.assertEqual(detail["source"], "manual")
+                self.assertEqual(detail["operator_draft"], explicit_draft or unverified["draft_reply"]["text"])
 
     def test_queue_unavailable_never_claims_delivery(self):
         self.server.queue = None

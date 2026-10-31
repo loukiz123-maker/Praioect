@@ -1,18 +1,20 @@
 import gzip
 import http.client
 import json
+import sys
 import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import ticket, write_fixtures
 from support_copilot.batch import predict
-from support_copilot.catalog import Catalog
+from support_copilot.catalog import Catalog, CatalogError
 from support_copilot.evaluate import evaluate, macro_f1
-from support_copilot.server import CopilotServer
+from support_copilot.server import CopilotServer, valid_result
 from support_copilot.service import InputError, TriageService
 
 
@@ -91,6 +93,23 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(failure.exception.code, 400)
             self.assertNotIn("UNTRUSTED_MARKER", json.dumps(json.load(failure.exception)))
 
+    def test_result_validation_requires_the_exact_numbered_source(self):
+        for language in ("ru", "en", "kk", "uz", "es", "pt"):
+            payload = ticket("Игрок оскорбил меня в чате")
+            result = self.service.triage(payload, reply_language=language)
+            self.assertEqual(result["draft_reply"]["lang"], language)
+            self.assertEqual(result["draft_reply"]["cited"], ["2.1"])
+            self.assertTrue(valid_result(result, self.service), language)
+            for original, replacement in (
+                ("В игровом чате нельзя оскорблять других людей и их родственников.", "Выдуманная формулировка."),
+                ("Общие правила игры", "Правила жалоб"),
+            ):
+                with self.subTest(language=language, modification=original):
+                    forged = json.loads(json.dumps(result, ensure_ascii=False))
+                    forged["draft_reply"]["text"] = forged["draft_reply"]["text"].replace(original, replacement)
+                    self.assertNotEqual(forged["draft_reply"]["text"], result["draft_reply"]["text"])
+                    self.assertFalse(valid_result(forged, self.service))
+
     def test_mentions_are_unverified_and_server_is_a_string_over_http(self):
         payload = ticket("Игрок оскорбил меня, скриншоты есть", server=12)
         with self.post("/triage", json.dumps(payload, ensure_ascii=False).encode()) as response:
@@ -107,6 +126,39 @@ class ApiTests(unittest.TestCase):
                     self.post("/triage", body)
                 self.assertEqual(failure.exception.code, 400)
                 self.assertIn("error", json.load(failure.exception))
+
+    def test_http_rejects_non_json_and_out_of_range_numbers_everywhere(self):
+        numbers = ["NaN", "Infinity", "-Infinity", "1e400", "-1e400"]
+        integer_limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+        if 0 < integer_limit < 10_000:
+            numbers.append("9" * (integer_limit + 1))
+        for number in numbers:
+            for field in ("ticket_id", "ignored_nested"):
+                with self.subTest(number=number, field=field):
+                    value = number if field == "ticket_id" else '{"number":' + number + '}'
+                    body = ('{"kind":"report","messages":[{"role":"player","text":"hello"}],"'
+                            + field + '":' + value + '}').encode()
+                    with self.assertRaises(urllib.error.HTTPError) as failure:
+                        self.post("/triage", body)
+                    self.assertEqual(failure.exception.code, 400)
+                    self.assertIn("error", json.load(failure.exception))
+        # Finite fractional metadata remains accepted.
+        payload = ticket("hello", kind="report", extra={"number": 1.25})
+        with self.post("/triage", json.dumps(payload).encode()) as response:
+            self.assertEqual(response.status, 200)
+
+    def test_excessive_server_and_region_return_400_instead_of_500(self):
+        for field, value in (("server", "x" * 1025), ("region", "x" * 1025),
+                             ("server", 10 ** 1024), ("region", 10 ** 1024)):
+            with self.subTest(field=field, value_type=type(value).__name__):
+                payload = ticket("hello", kind="report", **{field: value})
+                with self.assertRaises(urllib.error.HTTPError) as failure:
+                    self.post("/triage", json.dumps(payload).encode())
+                self.assertEqual(failure.exception.code, 400)
+        for field in ("server", "region"):
+            payload = ticket("hello", kind="report", **{field: "x" * 1024})
+            with self.post("/triage", json.dumps(payload).encode()) as response:
+                self.assertEqual(len(json.load(response)["extracted"]["server"]), 1024)
 
     def test_oversized_body_is_rejected(self):
         # The server rejects from the header without waiting for a 1 MB body.
@@ -163,6 +215,64 @@ class BatchAndEvaluationTests(unittest.TestCase):
             predict(self.service, str(input_path), str(output_path))
         self.assertEqual(output_path.read_text(), "prior-output")
         self.assertEqual(list(self.root.glob(".copilot-*")), [])
+
+    def test_nonfinite_jsonl_does_not_replace_prior_output(self):
+        input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"
+        good = json.dumps(ticket("hello", kind="report"))
+        numbers = ["NaN", "Infinity", "-Infinity", "1e400", "-1e400"]
+        integer_limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+        if 0 < integer_limit < 10_000:
+            numbers.append("9" * (integer_limit + 1))
+        for number in numbers:
+            for field in ("ticket_id", "ignored_nested"):
+                with self.subTest(number=number, field=field):
+                    value = number if field == "ticket_id" else '{"number":' + number + '}'
+                    invalid = ('{"kind":"report","messages":[{"role":"player","text":"hello"}],"'
+                               + field + '":' + value + '}')
+                    input_path.write_text(good + "\n" + invalid + "\n", encoding="utf-8")
+                    output_path.write_text("prior-output", encoding="utf-8")
+                    with self.assertRaisesRegex(InputError, "Строка 2"):
+                        predict(self.service, str(input_path), str(output_path))
+                    self.assertEqual(output_path.read_text(), "prior-output")
+                    self.assertEqual(list(self.root.glob(".copilot-*")), [])
+
+    def test_nonfinite_classifier_result_cannot_produce_invalid_jsonl(self):
+        input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"
+        payload = ticket("hello", kind="report")
+        input_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        output_path.write_text("prior-output", encoding="utf-8")
+        broken = self.service.triage(payload)
+        broken["confidence"] = float("nan")
+        with patch.object(self.service, "triage", return_value=broken):
+            with self.assertRaisesRegex(InputError, "Строка 1"):
+                predict(self.service, str(input_path), str(output_path))
+        self.assertEqual(output_path.read_text(), "prior-output")
+        self.assertEqual(list(self.root.glob(".copilot-*")), [])
+
+    def test_batch_applies_the_same_human_review_guard_as_http(self):
+        input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"
+        payload = ticket("hello", kind="report")
+        input_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        unsafe = self.service.triage(payload)
+        self.assertFalse(unsafe["needs_human"])
+        unsafe["priority"] = "p0"
+        with patch.object(self.service, "triage", return_value=unsafe):
+            self.assertEqual(predict(self.service, str(input_path), str(output_path)), 1)
+        row = json.loads(output_path.read_text(encoding="utf-8"))
+        self.assertTrue(row["needs_human"])
+        self.assertTrue(any("Проверка человеком обязательна" in reason for reason in row["reasons"]))
+
+    def test_catalog_rejects_nonfinite_numbers_in_source_files(self):
+        rules, taxonomy, knowledge = write_fixtures(self.tmp.name)
+        for path in (rules, taxonomy, knowledge):
+            with self.subTest(path=Path(path).name):
+                original = Path(path).read_text(encoding="utf-8")
+                Path(path).write_text(original[:-1] + ', "unused": NaN}', encoding="utf-8")
+                try:
+                    with self.assertRaises(CatalogError):
+                        Catalog(rules, taxonomy, knowledge)
+                finally:
+                    Path(path).write_text(original, encoding="utf-8")
 
     def test_same_input_output_rejected(self):
         path = self.root / "same.jsonl"

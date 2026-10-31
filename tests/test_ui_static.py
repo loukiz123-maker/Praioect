@@ -203,7 +203,7 @@ class TranslationCoverageTests(unittest.TestCase):
     def test_classifier_and_api_explanations_and_errors_have_translations(self):
         root = STATIC.parents[1]
         called = {"append", "InputError", "HttpFailure", "QueueConflict", "QueueNotFound", "QueueFull"}
-        for name in ("service.py", "server.py", "admin_queue.py"):
+        for name in ("service.py", "server.py", "admin_queue.py", "result_validation.py"):
             tree = ast.parse((root / "support_copilot" / name).read_text(encoding="utf-8"))
             missing = []
             for node in ast.walk(tree):

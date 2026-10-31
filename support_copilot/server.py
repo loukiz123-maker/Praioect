@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hmac
 import json
-import math
 import mimetypes
 import os
 import sqlite3
@@ -29,8 +28,9 @@ from .admin_queue import (
 )
 from .catalog import CatalogError
 from .config import add_data_arguments, make_service
+from .json_data import strict_json_loads
+from .result_validation import checked_triage, valid_result
 from .service import (
-    NAMED_RULE_REASON,
     REPLY_LANGUAGE_CHOICES,
     RULE_REF_RE,
     InputError,
@@ -54,83 +54,6 @@ ASSETS = {
     "/favicon.svg": "favicon.svg",
     "/city-banner.jpg": "city-banner.jpg",
 }
-RESULT_KEYS = {
-    "lang", "category", "priority", "is_spam_or_duplicate", "extracted",
-    "draft_reply", "needs_human", "confidence", "reasons",
-}
-
-
-def valid_result(value: Any, service: TriageService | None) -> bool:
-    """Fail closed on a broken or incomplete classifier response.
-
-    Valid shape cannot prove semantic correctness: administrators still need
-    to review high-risk, uncertain, and manually reported results.
-    """
-    if not isinstance(value, dict) or set(value) != RESULT_KEYS:
-        return False
-    if not isinstance(value["lang"], str) or value["lang"] not in SUPPORTED_LANGUAGES | {"und"}:
-        return False
-    category = value["category"]
-    if not isinstance(category, str) or not category or len(category) > 128:
-        return False
-    if service is not None and category not in service.catalog.categories:
-        return False
-    if value["priority"] not in ("p0", "p1", "p2", "p3"):
-        return False
-    if not isinstance(value["is_spam_or_duplicate"], bool) or not isinstance(value["needs_human"], bool):
-        return False
-    confidence = value["confidence"]
-    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1 or not math.isfinite(confidence):
-        return False
-    extracted = value["extracted"]
-    if not isinstance(extracted, dict) or set(extracted) != {"nickname", "rule_refs", "server", "has_evidence"}:
-        return False
-    if not isinstance(extracted["has_evidence"], bool):
-        return False
-    if any(v is not None and (not isinstance(v, str) or len(v) > 1024) for v in (extracted["nickname"], extracted["server"])):
-        return False
-    if not _string_list(extracted["rule_refs"], 100, 100):
-        return False
-    draft = value["draft_reply"]
-    if not isinstance(draft, dict) or set(draft) != {"lang", "text", "cited"}:
-        return False
-    if not isinstance(draft["lang"], str) or draft["lang"] not in SUPPORTED_LANGUAGES:
-        return False
-    if not isinstance(draft["text"], str) or not draft["text"].strip() or len(draft["text"]) > 100_000:
-        return False
-    if not _string_list(draft["cited"], 100, 100) or not _string_list(value["reasons"], 100, 2000):
-        return False
-    if service is not None:
-        rule_numbers = {rule.number for rule in service.catalog.rules}
-        if any(ref not in rule_numbers or ref not in draft["text"] for ref in draft["cited"]):
-            return False
-        # A term source is separate context, not a number in `cited`. If the
-        # assistant says it found a term, require a literal attributed source.
-        if NAMED_RULE_REASON in value["reasons"] and not service.catalog.named_sources_in_draft(draft["text"]):
-            return False
-    try:
-        json.dumps(value, ensure_ascii=False).encode("utf-8")
-    except (TypeError, UnicodeError, ValueError, RecursionError):
-        return False
-    return True
-
-
-def _string_list(value: Any, max_items: int, max_length: int) -> bool:
-    return isinstance(value, list) and len(value) <= max_items and all(isinstance(x, str) and len(x) <= max_length for x in value)
-
-
-def _ensure_safety_review(result: dict[str, Any], service: TriageService) -> dict[str, Any]:
-    risk = result["category"] in {"report.payment", "report.account", "complaint.admin", "report.complaint"}
-    risk = risk or result["category"].startswith("complaint.") or NAMED_RULE_REASON in result["reasons"]
-    risk = risk or result["category"] in service.catalog.always_human
-    risk = risk or result["priority"] == "p0" or result["confidence"] < 0.6 or result["lang"] == "und" or result["is_spam_or_duplicate"]
-    if risk and not result["needs_human"]:
-        result = dict(result)
-        result["needs_human"] = True
-        result["reasons"] = [*result["reasons"], "Проверка человеком обязательна из-за риска или неуверенности."]
-    return result
-
-
 class HttpFailure(Exception):
     def __init__(self, status: int, message: str):
         self.status = status
@@ -180,7 +103,7 @@ class CopilotHandler(BaseHTTPRequestHandler):
 
     def _json(self, status: int, value: object, headers: dict[str, str] | None = None) -> None:
         try:
-            self._write(status, json.dumps(value, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8", headers)
+            self._write(status, json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"), "application/json; charset=utf-8", headers)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # A browser may have timed out and retried the handoff independently.
             pass
@@ -198,9 +121,9 @@ class CopilotHandler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
             raise HttpFailure(415, "Используйте Content-Type: application/json")
         try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            payload = strict_json_loads(self.rfile.read(length).decode("utf-8"))
             # Reject escaped unpaired surrogates before they reach HTTP/SQLite.
-            json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
             return payload
         except (UnicodeError, ValueError, RecursionError) as exc:
             raise HttpFailure(400, "Тело запроса должно быть корректным JSON в UTF-8") from exc
@@ -263,10 +186,7 @@ class CopilotHandler(BaseHTTPRequestHandler):
             self._json(503, {"error": "Автоматический разбор недоступен"}, headers)
             return
         try:
-            result = service.triage(payload)
-            if not valid_result(result, service):
-                raise ValueError("invalid classifier result")
-            result = _ensure_safety_review(result, service)
+            result = checked_triage(service, payload)
         except Exception as exc:  # Input was already validated; any classifier error needs review.
             print(f"Ошибка обработки запроса: {type(exc).__name__}", file=sys.stderr)
             headers = self._try_enqueue(payload, receipt, "failure")
@@ -284,12 +204,37 @@ class CopilotHandler(BaseHTTPRequestHandler):
         if not isinstance(source, str) or source not in {"manual", "failure"}:
             raise InputError("Неверная причина передачи")
         result = body.get("result")
-        if result is not None and not valid_result(result, self.server.service):
-            raise InputError("Результат разбора некорректен")
+        draft = body.get("draft")
+        if result is not None:
+            if not valid_result(result, None):
+                raise InputError("Результат разбора некорректен")
+            supplied = result
+            result = None
+            service = self.server.service
+            if service is not None and valid_result(supplied, service):
+                # Recompute from the submitted player input rather than trust a
+                # browser-provided result. Omit identifiers so this does not
+                # add a second event to the duplicate detector.
+                replay = {key: value for key, value in ticket.items()
+                          if key not in {"reporter_hash", "reported_hash", "ticket_id"}}
+                try:
+                    baseline = checked_triage(service, replay)
+                except Exception as exc:
+                    print(f"Ошибка повторной проверки результата: {type(exc).__name__}", file=sys.stderr)
+                else:
+                    stable_fields = ("lang", "category", "priority", "extracted", "confidence", "draft_reply")
+                    if all(supplied[key] == baseline[key] for key in stable_fields):
+                        # Duplicate-dependent fields cannot be replayed without
+                        # identifiers; retain only the independently recomputed result.
+                        result = baseline
+            if result is None and draft is None:
+                # Preserve unverified text as an operator draft, never as an
+                # assistant output or training signal attributed to it.
+                draft = supplied["draft_reply"]["text"]
         receipt = self._receipt()
         review = self._queue().enqueue(
-            ticket, receipt, source, result=result, draft=body.get("draft"),
-            update_draft=source == "manual" and body.get("draft") is not None,
+            ticket, receipt, source, result=result, draft=draft,
+            update_draft=source == "manual" and draft is not None,
         )
         self._json(200 if not review["created"] else 201, {"status": review["status"]})
 
@@ -333,8 +278,12 @@ class CopilotHandler(BaseHTTPRequestHandler):
             raise QueueConflict("Обращение изменилось. Обновите карточку перед созданием черновика.")
         service = self.server.service
         original = detail.get("result")
-        if not service or not valid_result(original, service):
+        if not service or not valid_result(original, None):
             raise HttpFailure(503, "Автоматический черновик недоступен. Напишите ответ вручную.")
+        if not valid_result(original, service):
+            # A previously stored source may no longer exist in the current
+            # catalog or template; the administrator must review it manually.
+            raise QueueConflict("Исходный черновик изменился. Проверьте обращение и напишите ответ вручную.")
 
         # Only the server-side snapshot is used. Never accept replacement text
         # from the request, consult historical admin responses, or add another

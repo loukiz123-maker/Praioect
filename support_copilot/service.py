@@ -258,6 +258,21 @@ def validate_ticket(ticket: Any) -> tuple[str, list[dict[str, Any]]]:
         language = ticket["reply_language"]
         if not isinstance(language, str) or language not in REPLY_LANGUAGE_CHOICES | {"auto"}:
             raise InputError("Выберите язык ответа: автоматически, RU, EN, KK или UZ.")
+    # These fields can be returned as extracted.server; rejecting excessive
+    # metadata here avoids turning valid JSON into an internal result error.
+    for name in ("server", "region"):
+        value = ticket.get(name)
+        if isinstance(value, str):
+            too_long = len(value.strip()) > 1024
+        elif isinstance(value, int) and not isinstance(value, bool):
+            try:
+                too_long = len(str(value)) > 1024
+            except ValueError:  # Interpreter limit for huge integer strings.
+                too_long = True
+        else:
+            too_long = False
+        if too_long:
+            raise InputError("Поле server или region должно быть не длиннее 1024 символов.")
     return kind, _player_messages(ticket)
 
 

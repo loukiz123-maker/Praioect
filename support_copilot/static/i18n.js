@@ -1563,6 +1563,11 @@
       "messages өрісі хабарламалар массиві болуы керек",
       "messages maydoni xabarlar massivi bo‘lishi kerak",
     ],
+    "Поле server или region должно быть не длиннее 1024 символов.": [
+      "The server or region field must be no longer than 1024 characters.",
+      "server немесе region өрісі 1024 таңбадан аспауы керек.",
+      "server yoki region maydoni 1024 ta belgidan oshmasligi kerak.",
+    ],
     "Слишком много сообщений в обращении": [
       "Too many messages in the ticket",
       "Өтініштегі хабарламалар тым көп",
