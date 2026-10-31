@@ -734,6 +734,85 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.message-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 12px;
+}
+.message-comparison > div {
+  min-width: 0;
+}
+.translation-label {
+  display: block;
+  margin: 0 0 5px;
+  color: #667185;
+  font-size: 11px;
+  font-weight: 750;
+}
+.translated-message {
+  border-color: #d9d6f2;
+  background: #f7f6fd;
+}
+.google-attribution {
+  display: inline-block;
+  margin-top: 6px;
+  line-height: 0;
+}
+.google-attribution img {
+  display: block;
+  max-width: 100%;
+}
+.translation-disclaimer {
+  margin-top: 8px;
+  color: #5d6879;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.translation-disclaimer summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.translation-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  color: #5f6b7d;
+  font-size: 12px;
+}
+.translate-button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #c9c6e4;
+  border-radius: 8px;
+  background: #f7f6fd;
+  color: #4f488d;
+  font-weight: 700;
+}
+.translate-button:hover:not(:disabled) {
+  background: #eeedfa;
+}
+.translate-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.translation-privacy,
+.translation-config,
+.translation-status {
+  margin: 7px 0 0;
+  color: #5d6879;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.translation-status {
+  color: #414d62;
+  font-weight: 600;
+}
+.translation-config:empty,
+.translation-status:empty {
+  display: none;
+}
 .review-reasons {
   margin-top: 17px;
   padding: 12px;

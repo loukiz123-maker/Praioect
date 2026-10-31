@@ -19,6 +19,10 @@ const state = {
   busy: false,
   exportController: null,
   exportedCount: null,
+  translationAvailable: null,
+  translationMax: 5000,
+  translationSerial: 0,
+  translationController: null,
 };
 let sessionCheckSerial = 0;
 const statusNames = {
@@ -69,8 +73,13 @@ async function api(path, options = {}) {
   if (state.key) headers.Authorization = `Bearer ${state.key}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else
+    options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timer = window.setTimeout(() => controller.abort(), 10000);
   let response;
+  let data;
   try {
     response = await fetch(path, {
       method: options.method || "GET",
@@ -81,6 +90,12 @@ async function api(path, options = {}) {
       credentials: "omit",
       signal: controller.signal,
     });
+    try {
+      data = await response.json();
+    } catch (error) {
+      if (error.name === "AbortError") throw error;
+      throw new ApiError("Сервис вернул некорректный ответ.", response.status);
+    }
   } catch (error) {
     if (error.name === "AbortError")
       throw new ApiError(
@@ -90,12 +105,7 @@ async function api(path, options = {}) {
     throw error;
   } finally {
     window.clearTimeout(timer);
-  }
-  let data;
-  try {
-    data = await response.json();
-  } catch (_) {
-    throw new ApiError("Сервис вернул некорректный ответ.", response.status);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
   if (!response.ok)
     throw new ApiError(
@@ -113,6 +123,143 @@ function formatDate(seconds) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(seconds * 1000));
+}
+
+function updateTranslationControls() {
+  const text =
+    typeof state.detail?.message === "string" ? state.detail.message : "";
+  const tooLong = Array.from(text).length > state.translationMax;
+  $("translate-message").disabled =
+    !state.authenticated ||
+    state.translationAvailable !== true ||
+    !text.trim() ||
+    tooLong ||
+    state.busy ||
+    Boolean(state.translationController);
+  let message = "";
+  if (state.authenticated && state.detail) {
+    if (state.translationAvailable === null)
+      message = "Проверяем доступность перевода…";
+    else if (state.translationAvailable === "error")
+      message = "Не удалось проверить доступность перевода.";
+    else if (!state.translationAvailable)
+      message = "Google Перевод не настроен на сервере.";
+    else if (tooLong)
+      message =
+        "Сообщение слишком длинное для перевода (максимум 5000 символов).";
+  }
+  $("translation-config").textContent = t(message);
+}
+
+function clearMessageTranslation() {
+  state.translationSerial += 1;
+  state.translationController?.abort();
+  state.translationController = null;
+  $("message-translation-box").hidden = true;
+  $("message-translation").textContent = "";
+  $("message-translation").removeAttribute("lang");
+  $("translation-status").textContent = "";
+  updateTranslationControls();
+}
+
+async function refreshTranslationAvailability() {
+  const serial = sessionCheckSerial;
+  state.translationAvailable = null;
+  updateTranslationControls();
+  try {
+    const { data } = await api("/admin/api/translation");
+    if (!state.authenticated || serial !== sessionCheckSerial) return;
+    if (
+      typeof data?.configured !== "boolean" ||
+      !Number.isInteger(data.max_characters)
+    )
+      throw new Error("invalid status");
+    state.translationAvailable = data.configured;
+    state.translationMax = data.max_characters;
+  } catch (_) {
+    if (!state.authenticated || serial !== sessionCheckSerial) return;
+    state.translationAvailable = "error";
+  }
+  updateTranslationControls();
+}
+
+async function translateMessage() {
+  if (
+    !state.authenticated ||
+    !state.detail ||
+    state.translationAvailable !== true ||
+    state.translationController ||
+    state.busy
+  )
+    return;
+  if (
+    !window.confirm(
+      t(
+        "Отправить сообщение игрока в Google для перевода? Проверьте, что передача данных разрешена.",
+      ),
+    )
+  )
+    return;
+  const { id, version } = state.detail;
+  const target = window.CopilotI18n.language;
+  clearMessageTranslation();
+  const serial = ++state.translationSerial;
+  const controller = new AbortController();
+  state.translationController = controller;
+  $("translation-status").textContent = t("Переводим сообщение…");
+  updateTranslationControls();
+  try {
+    const { data } = await api(
+      `/admin/api/reviews/${encodeURIComponent(id)}/translate`,
+      {
+        method: "POST",
+        body: { target, version, consent: true },
+        signal: controller.signal,
+      },
+    );
+    if (
+      controller.signal.aborted ||
+      serial !== state.translationSerial ||
+      !state.authenticated ||
+      state.selected !== id ||
+      state.detail?.version !== version ||
+      window.CopilotI18n.language !== target
+    )
+      return;
+    if (
+      typeof data?.translation !== "string" ||
+      !data.translation.trim() ||
+      data.target !== target
+    )
+      throw new ApiError(
+        "Не удалось получить перевод Google. Проверьте настройку и сеть.",
+        502,
+      );
+    $("message-translation").textContent = data.translation;
+    $("message-translation").lang = target;
+    $("message-translation-box").hidden = false;
+    $("translation-status").textContent = t(
+      "Перевод готов. Проверьте его по оригиналу.",
+    );
+  } catch (error) {
+    if (
+      controller.signal.aborted ||
+      serial !== state.translationSerial ||
+      !state.authenticated
+    )
+      return;
+    $("translation-status").textContent = t(
+      error instanceof TypeError
+        ? "Нет связи с сервером. Перевод не получен."
+        : error.message ||
+            "Не удалось получить перевод Google. Проверьте настройку и сеть.",
+    );
+  } finally {
+    if (serial === state.translationSerial) {
+      state.translationController = null;
+      updateTranslationControls();
+    }
+  }
 }
 
 function showLogin(message = "") {
@@ -134,6 +281,8 @@ function showLogin(message = "") {
   state.detail = null;
   state.dirty = false;
   state.busy = false;
+  state.translationAvailable = null;
+  clearMessageTranslation();
   $("dashboard").hidden = true;
   $("logout-button").hidden = true;
   $("login-screen").hidden = false;
@@ -181,7 +330,7 @@ async function enterDashboard() {
   $("logout-button").hidden = false;
   $("login-error").textContent = "";
   $("admin-key").value = "";
-  await refreshList();
+  await Promise.all([refreshList(), refreshTranslationAvailability()]);
 }
 
 function updateFilterButtons() {
@@ -327,7 +476,7 @@ function renderDetailText(detail) {
   $("review-priority").textContent =
     priorityNames[detail.result?.priority] || "Не определён";
   $("review-created").textContent = formatDate(detail.created_at);
-  // Player messages and rule references are never translated or modified.
+  // Keep the original unchanged; the optional translation is displayed separately.
   $("review-message").textContent =
     detail.message || t("Сообщение не указано.");
   const meta = detail.metadata || {};
@@ -396,6 +545,12 @@ function renderDetailText(detail) {
 
 function renderDetail(detail) {
   if (state.selected !== detail.id) $("rule-candidates").open = false;
+  if (
+    state.selected !== detail.id ||
+    state.detail?.version !== detail.version ||
+    state.detail?.message !== detail.message
+  )
+    clearMessageTranslation();
   state.detail = detail;
   state.selected = detail.id;
   state.dirty = false;
@@ -427,6 +582,7 @@ function renderDetail(detail) {
   $("escalate-review").disabled = state.busy || detail.status === "escalated";
   $("escalate-review").textContent =
     detail.status === "escalated" ? "Эскалировано" : "Эскалировать";
+  updateTranslationControls();
   renderList();
 }
 
@@ -438,6 +594,7 @@ async function selectReview(id, { force = false } = {}) {
     !window.confirm(t("Есть несохранённые правки. Перейти без сохранения?"))
   )
     return;
+  if (state.selected !== id) clearMessageTranslation();
   const serial = ++state.selectionSerial;
   try {
     const { data } = await api(`/admin/api/reviews/${encodeURIComponent(id)}`);
@@ -456,7 +613,10 @@ async function selectReview(id, { force = false } = {}) {
 
 function setBusy(busy) {
   state.busy = busy;
-  if (busy) state.selectionSerial += 1;
+  if (busy) {
+    state.selectionSerial += 1;
+    clearMessageTranslation();
+  }
   $("admin-draft").readOnly = busy;
   $("review-content").setAttribute("aria-busy", String(busy));
   for (const id of [
@@ -472,6 +632,7 @@ function setBusy(busy) {
     $(id).disabled =
       busy ||
       (id === "escalate-review" && state.detail?.status === "escalated");
+  updateTranslationControls();
 }
 
 async function updateReview(status) {
@@ -687,6 +848,7 @@ $("queue-next").addEventListener("click", () => {
   refreshList();
 });
 $("refresh-queue").addEventListener("click", refreshList);
+$("translate-message").addEventListener("click", translateMessage);
 $("admin-draft").addEventListener("input", () => {
   state.dirty = true;
   $("review-notice").textContent = "Есть несохранённые правки.";
@@ -707,6 +869,7 @@ $("reload-review").addEventListener("click", () => {
 $("delete-review").addEventListener("click", deleteReview);
 document.addEventListener("copilot:languagechange", () => {
   if (!state.authenticated) return;
+  clearMessageTranslation();
   renderList();
   renderPagination();
   if (state.detail) renderDetailText(state.detail);

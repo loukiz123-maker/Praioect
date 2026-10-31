@@ -1,8 +1,9 @@
 "use strict";
 
-// These translations cover application-owned interface text, not player text,
-// administrator drafts, rule quotations, or the API's raw JSON. Keep the
-// Russian source strings stable so backend status/error messages can be mapped.
+// This dictionary covers application-owned interface text, not player text,
+// administrator drafts, rule quotations, or the API's raw JSON. A separately
+// requested Google translation is displayed without modifying those originals.
+// Keep Russian source strings stable so backend status/errors can be mapped.
 (() => {
   const messages = {
     "Перейти к форме обращения": [
@@ -48,7 +49,7 @@
       "Соңғы шешімді әрқашан әкімші қабылдайды",
     ],
     "Локальная обработка": ["Local processing", "Жергілікті өңдеу"],
-    "Без сторонних API": ["No external APIs", "Сыртқы API қолданылмайды"],
+    "Перевод по запросу": ["Translation on request", "Сұрау бойынша аударма"],
     "Обращения в сессии": ["Tickets this session", "Сессиядағы өтініштер"],
     обращений: ["tickets", "өтініш"],
     "Требуют проверки": ["Need review", "Тексеру қажет"],
@@ -64,6 +65,101 @@
     "Жалоба на игрока": ["Player complaint", "Ойыншыға шағым"],
     "Репорт из игры": ["In-game report", "Ойын ішіндегі өтініш"],
     "Сообщение игрока": ["Player message", "Ойыншы хабарламасы"],
+    Оригинал: ["Original", "Түпнұсқа"],
+    "Оригинал сообщения игрока": [
+      "Original player message",
+      "Ойыншы хабарламасының түпнұсқасы",
+    ],
+    "Машинный перевод": ["Machine translation", "Машиналық аударма"],
+    "О машинном переводе": [
+      "About machine translation",
+      "Машиналық аударма туралы",
+    ],
+    "Автоматический перевод может содержать ошибки; сверяйте его с оригиналом.":
+      [
+        "Automatic translations may contain mistakes; check them against the original.",
+        "Автоматты аудармада қателер болуы мүмкін; оны түпнұсқамен салыстырыңыз.",
+      ],
+    "Документация Cloud Translation API": [
+      "Cloud Translation API documentation",
+      "Cloud Translation API құжаттамасы",
+    ],
+    "Перевод сообщения игрока": [
+      "Player message translation",
+      "Ойыншы хабарламасының аудармасы",
+    ],
+    "Перевести через Google": ["Translate with Google", "Google арқылы аудару"],
+    "На язык интерфейса": ["Into the interface language", "Интерфейс тіліне"],
+    "После подтверждения сообщение отправляется в Google для перевода. Убедитесь, что передача разрешена.":
+      [
+        "After confirmation, the message is sent to Google for translation. Make sure sharing it is permitted.",
+        "Растағаннан кейін хабарлама аудару үшін Google-ға жіберіледі. Деректерді жіберуге рұқсат бар екеніне көз жеткізіңіз.",
+      ],
+    "Проверяем доступность перевода…": [
+      "Checking translation availability…",
+      "Аударманың қолжетімділігі тексерілуде…",
+    ],
+    "Не удалось проверить доступность перевода.": [
+      "Could not check translation availability.",
+      "Аударма қолжетімділігін тексеру мүмкін болмады.",
+    ],
+    "Google Перевод не настроен на сервере.": [
+      "Google Translate is not configured on the server.",
+      "Серверде Google аудармасы бапталмаған.",
+    ],
+    "Сообщение слишком длинное для перевода (максимум 5000 символов).": [
+      "The message is too long to translate (maximum 5,000 characters).",
+      "Хабарлама аудару үшін тым ұзын (ең көбі 5000 таңба).",
+    ],
+    "Отправить сообщение игрока в Google для перевода? Проверьте, что передача данных разрешена.":
+      [
+        "Send the player's message to Google for translation? Make sure this data transfer is permitted.",
+        "Ойыншы хабарламасын аудару үшін Google-ға жіберу керек пе? Деректерді жіберуге рұқсат барын тексеріңіз.",
+      ],
+    "Переводим сообщение…": [
+      "Translating the message…",
+      "Хабарлама аударылуда…",
+    ],
+    "Перевод готов. Проверьте его по оригиналу.": [
+      "Translation ready. Check it against the original.",
+      "Аударма дайын. Оны түпнұсқамен салыстырып тексеріңіз.",
+    ],
+    "Нет связи с сервером. Перевод не получен.": [
+      "No connection to the server. Translation was not received.",
+      "Сервермен байланыс жоқ. Аударма алынбады.",
+    ],
+    "Не удалось получить перевод Google. Проверьте настройку и сеть.": [
+      "Could not get a Google translation. Check the configuration and network.",
+      "Google аудармасын алу мүмкін болмады. Баптаулар мен желіні тексеріңіз.",
+    ],
+    "Некорректный запрос перевода.": [
+      "Invalid translation request.",
+      "Аударма сұрауы жарамсыз.",
+    ],
+    "Для перевода подтвердите передачу сообщения в Google.": [
+      "Confirm sending the message to Google before translating.",
+      "Аудармас бұрын хабарламаны Google-ға жіберуді растаңыз.",
+    ],
+    "Неверный язык перевода.": [
+      "Invalid translation language.",
+      "Аударма тілі жарамсыз.",
+    ],
+    "Обращение изменилось. Обновите карточку перед переводом.": [
+      "The ticket changed. Refresh it before translating.",
+      "Өтініш өзгерді. Аудармас бұрын карточканы жаңартыңыз.",
+    ],
+    "Сообщение для перевода пустое.": [
+      "The message to translate is empty.",
+      "Аударылатын хабарлама бос.",
+    ],
+    "Слишком много запросов перевода. Подождите минуту.": [
+      "Too many translation requests. Wait one minute.",
+      "Аударма сұраулары тым көп. Бір минут күтіңіз.",
+    ],
+    "Перевод занят. Попробуйте ещё раз.": [
+      "Translation is busy. Try again.",
+      "Аударма қызметі бос емес. Қайта көріңіз.",
+    ],
     "Языки: RU, KK, UZ, EN, ES, PT": [
       "Languages: RU, KK, UZ, EN, ES, PT",
       "Тілдер: RU, KK, UZ, EN, ES, PT",
@@ -83,10 +179,10 @@
     "Примеры для теста": ["Test examples", "Сынақ мысалдары"],
     "Разобрать обращение": ["Analyze ticket", "Өтінішті талдау"],
     "Очистить форму": ["Clear form", "Форманы тазалау"],
-    "Обращения для проверки сохраняются на этом сервере; во внешние API данные не отправляются.":
+    "Обращения для проверки хранятся на сервере. Перевод по запросу передаёт текст сообщения в Google.":
       [
-        "Tickets requiring review are stored on this server; data is not sent to external APIs.",
-        "Тексерілетін өтініштер осы серверде сақталады; деректер сыртқы API-лерге жіберілмейді.",
+        "Tickets requiring review are stored on the server. An optional translation sends the message text to Google.",
+        "Тексерілетін өтініштер серверде сақталады. Сұрау бойынша аудару хабарлама мәтінін Google-ға жібереді.",
       ],
     РЕЗУЛЬТАТ: ["RESULT", "НӘТИЖЕ"],
     "Разбор помощника": ["Assistant analysis", "Көмекші талдауы"],
@@ -268,16 +364,16 @@
       "Languages and original content",
       "Тілдер және түпнұсқалар",
     ],
-    "Переключатель меняет интерфейс на русский, английский или казахский. Текст игрока, черновики, цитаты правил и исходный JSON не переводятся. Ответ готовится по определённому языку игрока, но язык может быть определён ошибочно. Если он не определён, используется русский и требуется проверка.":
+    "Переключатель меняет интерфейс на русский, английский или казахский. Текст игрока, черновики, цитаты правил и исходный JSON автоматически не переводятся. В админке можно отдельно запросить перевод сообщения через Google, сохранив оригинал. Ответ готовится по определённому языку игрока, но язык может быть определён ошибочно. Если он не определён, используется русский и требуется проверка.":
       [
-        "The switch changes the interface to Russian, English or Kazakh. Player text, drafts, rule quotations and raw JSON are not translated. Replies follow the detected player language, which may be incorrect. If it is undetermined, Russian is used and review is required.",
-        "Ауыстырғыш интерфейсті орыс, ағылшын немесе қазақ тіліне өзгертеді. Ойыншы мәтіні, жауап жобалары, ереже дәйексөздері және бастапқы JSON аударылмайды. Жауап ойыншының анықталған тіліне қарай дайындалады, бірақ тіл қате анықталуы мүмкін. Тіл анықталмаса, орыс тілі қолданылады және тексеру қажет.",
+        "The switch changes the interface to Russian, English or Kazakh. Player text, drafts, rule quotations and raw JSON are not translated automatically. In the admin panel, a message can be translated separately through Google while keeping the original. Replies follow the detected player language, which may be incorrect. If it is undetermined, Russian is used and review is required.",
+        "Ауыстырғыш интерфейсті орыс, ағылшын немесе қазақ тіліне өзгертеді. Ойыншы мәтіні, жауап жобалары, ереже дәйексөздері және бастапқы JSON автоматты түрде аударылмайды. Әкімші панелінде түпнұсқаны сақтай отырып, хабарламаны Google арқылы бөлек аударуға болады. Жауап ойыншының анықталған тіліне қарай дайындалады, бірақ тіл қате анықталуы мүмкін. Тіл анықталмаса, орыс тілі қолданылады және тексеру қажет.",
       ],
     "Границы прототипа": ["Prototype limitations", "Прототиптің шектеулері"],
-    "Это эвристический MVP без LLM и внешних API. Качество на реальных данных не измерено; оценка уверенности не равна точности. Факты и окончательное решение проверяет человек.":
+    "Это эвристический MVP без LLM. Авторазбор работает локально, а необязательный перевод сообщения по запросу использует Google. Качество на реальных данных не измерено; оценка уверенности не равна точности. Факты и окончательное решение проверяет человек.":
       [
-        "This is a heuristic MVP without an LLM or external APIs. Its quality on real data has not been measured; the confidence score is not accuracy. A person checks the facts and makes the final decision.",
-        "Бұл LLM және сыртқы API қолданбайтын эвристикалық MVP. Нақты деректердегі сапасы өлшенбеген; сенімділік бағасы дәлдік көрсеткіші емес. Фактілерді адам тексереді және соңғы шешімді адам қабылдайды.",
+        "This is a heuristic MVP without an LLM. Triage runs locally; an optional translation uses Google on request. Its quality on real data has not been measured; the confidence score is not accuracy. A person checks the facts and makes the final decision.",
+        "Бұл LLM қолданбайтын эвристикалық MVP. Автоматты талдау жергілікті орындалады, ал қосымша аударма сұрау бойынша Google қызметін пайдаланады. Нақты деректердегі сапасы өлшенбеген; сенімділік бағасы дәлдік көрсеткіші емес. Фактілерді адам тексереді және соңғы шешімді адам қабылдайды.",
       ],
     "В проверенной выборке из 1000 обращений нет меток категорий и приоритетов. Для подтверждения качества нужны ручная оценка, проверка цитат и база знаний.":
       [

@@ -31,6 +31,16 @@ from .catalog import CatalogError
 from .config import add_data_arguments, make_service
 from .service import NAMED_RULE_REASON, RULE_REF_RE, InputError, TriageService, validate_ticket
 from .text import SUPPORTED_LANGUAGES
+from .translation import (
+    MAX_TRANSLATED_CHARACTERS,
+    MAX_TRANSLATION_CHARACTERS,
+    TARGET_LANGUAGES,
+    GoogleTranslator,
+    TranslationBusy,
+    TranslationLimiter,
+    TranslationRateLimited,
+    TranslationUnavailable,
+)
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_REQUEST_BYTES = 1_048_576
@@ -46,6 +56,7 @@ ASSETS = {
     "/brand-g.svg": "brand-g.svg",
     "/favicon.svg": "favicon.svg",
     "/city-banner.jpg": "city-banner.jpg",
+    "/translated-by-google.png": "translated-by-google.png",
 }
 RESULT_KEYS = {
     "lang", "category", "priority", "is_spam_or_duplicate", "extracted",
@@ -137,10 +148,13 @@ class CopilotServer(ThreadingHTTPServer):
     def __init__(
         self, server_address: tuple[str, int], service: TriageService | None,
         queue: AdminQueue | None = None, admin_key: str | None = None,
+        translator: GoogleTranslator | None = None,
     ):
         self.service = service
         self.queue = queue if admin_key else None
         self.admin_key = admin_key if queue else None
+        self.translator = translator if translator is not None else GoogleTranslator(None)
+        self.translation_limiter = TranslationLimiter()
         self.auth_lock = threading.Lock()
         self.auth_failures: dict[str, list[float]] = {}
         super().__init__(server_address, CopilotHandler)
@@ -305,6 +319,46 @@ class CopilotHandler(BaseHTTPRequestHandler):
         prefix = "/admin/api/reviews/"
         return path[len(prefix):] if path.startswith(prefix) else None
 
+    def _admin_translation_id(self, path: str) -> str | None:
+        prefix, suffix = "/admin/api/reviews/", "/translate"
+        if path.startswith(prefix) and path.endswith(suffix):
+            return path[len(prefix):-len(suffix)]
+        return None
+
+    def _translate_review(self, review_id: str, body: Any) -> None:
+        """Translate only the stored player message, never arbitrary client text."""
+        if not isinstance(body, dict) or set(body) != {"target", "version", "consent"}:
+            raise HttpFailure(400, "Некорректный запрос перевода.")
+        if body["consent"] is not True:
+            raise HttpFailure(400, "Для перевода подтвердите передачу сообщения в Google.")
+        target, version = body["target"], body["version"]
+        if not isinstance(target, str) or target not in TARGET_LANGUAGES:
+            raise HttpFailure(400, "Неверный язык перевода.")
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise HttpFailure(400, "Не указана версия обращения")
+        detail = self._queue().get(review_id)
+        if detail["version"] != version:
+            raise HttpFailure(409, "Обращение изменилось. Обновите карточку перед переводом.")
+        message = detail["message"]
+        if not isinstance(message, str) or not message.strip():
+            raise HttpFailure(400, "Сообщение для перевода пустое.")
+        if len(message) > MAX_TRANSLATION_CHARACTERS:
+            raise HttpFailure(413, "Сообщение слишком длинное для перевода (максимум 5000 символов).")
+        if not self.server.translator.configured:
+            raise HttpFailure(503, "Google Перевод не настроен на сервере.")
+        try:
+            with self.server.translation_limiter.acquire():
+                translated = self.server.translator.translate(message, target)
+        except TranslationRateLimited:
+            raise HttpFailure(429, "Слишком много запросов перевода. Подождите минуту.") from None
+        except TranslationBusy:
+            raise HttpFailure(503, "Перевод занят. Попробуйте ещё раз.") from None
+        except TranslationUnavailable:
+            raise HttpFailure(502, "Не удалось получить перевод Google. Проверьте настройку и сеть.") from None
+        if not isinstance(translated, str) or not translated.strip() or len(translated) > MAX_TRANSLATED_CHARACTERS:
+            raise HttpFailure(502, "Не удалось получить перевод Google. Проверьте настройку и сеть.")
+        self._json(200, {"translation": translated, "target": target})
+
     def _with_rule_candidates(self, detail: dict[str, Any]) -> dict[str, Any]:
         """Show possible source clauses to an authenticated human, not as citations."""
         service = self.server.service
@@ -345,6 +399,9 @@ class CopilotHandler(BaseHTTPRequestHandler):
             elif path == "/admin/api/session":
                 self._authorize()
                 self._json(200, {"authenticated": True})
+            elif path == "/admin/api/translation":
+                self._authorize()
+                self._json(200, {"configured": self.server.translator.configured, "max_characters": MAX_TRANSLATION_CHARACTERS})
             elif path == "/admin/api/feedback/export":
                 self._authorize()
                 self._feedback_export()
@@ -384,6 +441,9 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 self._triage(self._body())
             elif path == "/reviews/request":
                 self._review_request(self._body())
+            elif (review_id := self._admin_translation_id(path)) is not None:
+                self._authorize()
+                self._translate_review(review_id, self._body())
             elif (review_id := self._admin_detail_id(path)) is not None:
                 self._authorize()
                 body = self._body()
@@ -459,7 +519,8 @@ def main() -> int:
         print(f"Автоматический разбор недоступен: {type(exc).__name__}", file=sys.stderr)
         service = None
     try:
-        server = CopilotServer((args.host, args.port), service, queue, key)
+        translator = GoogleTranslator(os.environ.get("GOOGLE_TRANSLATE_API_KEY"))
+        server = CopilotServer((args.host, args.port), service, queue, key, translator)
     except OSError as exc:
         print(str(exc), file=sys.stderr)
         return 2

@@ -117,7 +117,8 @@ class UiMarkupTests(unittest.TestCase):
             "автоматически не восстановится с сервера",
             "14 дней после объявления победителей",
             "не переводятся",
-            "без LLM и внешних API",
+            "Авторазбор работает локально",
+            "перевод сообщения по запросу использует Google",
             "В проверенной выборке из 1000 обращений нет меток категорий и приоритетов",
             "проверка цитат и база знаний",
             "Автоматического обучения нет",
@@ -243,6 +244,18 @@ class AdminUiMarkupTests(unittest.TestCase):
         filters = [attrs.get("data-filter") for tag, attrs in self.markup.elements if tag == "button"]
         self.assertIn("escalated", filters)
         self.assertIn('/admin/api/feedback/export', self.script)
+
+    def test_google_translation_attribution_is_visible_with_the_result(self):
+        html = (STATIC / "admin.html").read_text(encoding="utf-8")
+        elements = self.markup.elements
+        badge = next(attrs for tag, attrs in elements if tag == "img" and attrs.get("src") == "/translated-by-google.png")
+        self.assertEqual(badge.get("alt"), "Powered by Google Translate")
+        link = next(attrs for tag, attrs in elements if tag == "a" and attrs.get("class") == "google-attribution")
+        self.assertEqual(link.get("href"), "https://translate.google.com/")
+        self.assertIn("noreferrer", link.get("rel", ""))
+        self.assertIn("THIS SERVICE MAY CONTAIN TRANSLATIONS POWERED BY GOOGLE.", html)
+        translated = next(attrs for _, attrs in elements if attrs.get("id") == "message-translation")
+        self.assertIn("data-i18n-preserve", translated)
 
     def test_no_browser_storage_or_html_injection_for_private_data(self):
         self.assertNotIn("localStorage", self.script)
