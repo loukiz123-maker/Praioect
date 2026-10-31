@@ -158,6 +158,120 @@ class AdminApiTests(unittest.TestCase):
         )[0], 200)
         self.assertEqual(self.request("/reviews/status", receipt=receipt)[0], 404)
 
+    def test_admin_creates_selected_language_drafts_without_saving_or_duplicate_events(self):
+        payload = ticket("Игрок Alex_Nova оскорбил меня в чате", reporter_hash="private-hash", reply_language="en")
+        payload["messages"].append({"role": "admin", "text": "SECRET_HISTORICAL_RESPONSE"})
+        receipt = new_receipt()
+        _, _, result = self.triage(payload, receipt)
+        review_id = self.admin_list()["items"][0]["id"]
+        path = f"/admin/api/reviews/{review_id}/draft"
+        detail_before = self.queue.get(review_id)
+        events_before = {key: tuple(events) for key, events in self.service.duplicates._events.items()}
+        self.assertEqual((result["lang"], result["draft_reply"]["lang"]), ("ru", "en"))
+        for language, greeting in (("ru", "Здравствуйте"), ("en", "Hello"), ("kk", "Сәлеметсіз бе")):
+            status, headers, body = self.request(path, method="POST", key=TEST_KEY, value={"version": 1, "language": language})
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["Cache-Control"], "no-store")
+            self.assertEqual(set(body), {"version", "draft_reply"})
+            self.assertEqual((body["version"], body["draft_reply"]["lang"]), (1, language))
+            self.assertIn(greeting, body["draft_reply"]["text"])
+            self.assertEqual(body["draft_reply"]["cited"], result["draft_reply"]["cited"])
+            self.assertIn("В игровом чате нельзя оскорблять", body["draft_reply"]["text"])
+            self.assertNotIn("SECRET_HISTORICAL_RESPONSE", json.dumps(body))
+            self.assertEqual(self.queue.get(review_id), detail_before)
+            self.assertEqual({key: tuple(events) for key, events in self.service.duplicates._events.items()}, events_before)
+            self.assertEqual(self.request("/reviews/status", receipt=receipt)[2], {"status": "waiting", "reply": None})
+            self.assertEqual(self.feedback()[0], [])
+
+    def test_admin_draft_requires_auth_validation_and_current_version(self):
+        self.triage(receipt=new_receipt())
+        review_id = self.admin_list()["items"][0]["id"]
+        path = f"/admin/api/reviews/{review_id}/draft"
+        valid = {"version": 1, "language": "en"}
+        self.assertEqual(self.request(path, method="POST", value=valid)[0], 401)
+        self.assertEqual(self.request(path, method="POST", key="invalid-key", value=valid)[0], 401)
+        for body in (
+            {}, {"version": True, "language": "en"}, {"version": 0, "language": "en"},
+            {"version": 1, "language": []}, {"version": 1, "language": "auto"},
+            {"version": 1, "language": "uz"}, {"version": 1, "language": "en", "message": "REPLACEMENT"},
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(self.request(path, method="POST", key=TEST_KEY, value=body)[0], 400)
+        self.assertEqual(self.request(path, method="POST", key=TEST_KEY, value={"version": 999, "language": "en"})[0], 409)
+        # The cancelled message-translation endpoints and asset are gone.
+        self.assertEqual(self.request("/admin/api/translation", key=TEST_KEY)[0], 404)
+        self.assertEqual(self.request(f"/admin/api/reviews/{review_id}/translate", method="POST", key=TEST_KEY, value={"target": "en"})[0], 404)
+        self.assertEqual(self.request("/translated-by-google.png")[0], 404)
+        self.assertEqual(self.queue.get(review_id)["version"], 1)
+
+    def test_admin_draft_fails_closed_for_missing_or_changed_context(self):
+        receipt = new_receipt()
+        payload = ticket("Игрок оскорбил меня в чате")
+        _, _, result = self.triage(payload, receipt)
+        review_id = self.admin_list()["items"][0]["id"]
+        path = f"/admin/api/reviews/{review_id}/draft"
+        request = {"version": 1, "language": "kk"}
+        # Even a structurally valid but tampered original cannot introduce a
+        # different claim or rule quotation into a newly generated draft.
+        tampered = json.loads(json.dumps(result))
+        tampered["draft_reply"]["text"] += " 2.1 ПОДМЕНА"
+        with sqlite3.connect(self.queue.path) as conn:
+            conn.execute("UPDATE reviews SET result_json=? WHERE id=?", (json.dumps(tampered, ensure_ascii=False), review_id))
+        self.assertEqual(self.request(path, method="POST", key=TEST_KEY, value=request)[0], 409)
+        with sqlite3.connect(self.queue.path) as conn:
+            conn.execute("UPDATE reviews SET result_json=NULL WHERE id=?", (review_id,))
+        self.assertEqual(self.request(path, method="POST", key=TEST_KEY, value=request)[0], 503)
+        self.assertEqual(self.queue.get(review_id)["version"], 1)
+        self.assertEqual(self.request("/reviews/status", receipt=receipt)[2]["reply"], None)
+
+    def test_admin_draft_rejects_changed_rule_catalog(self):
+        self.triage(receipt=new_receipt())
+        review_id = self.admin_list()["items"][0]["id"]
+        rules_path = self.root / "rules.json"
+        data = json.loads(rules_path.read_text(encoding="utf-8"))
+        data["rules"][0]["text"] = data["rules"][0]["text"].replace(
+            "В игровом чате нельзя оскорблять других людей и их родственников.",
+            "В игровом чате нельзя оскорблять других людей и их родственников. Изменённый источник.",
+        )
+        rules_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        self.service.catalog = Catalog(str(rules_path), str(self.root / "taxonomy.json"))
+        status, _, _ = self.request(
+            f"/admin/api/reviews/{review_id}/draft", method="POST", key=TEST_KEY,
+            value={"version": 1, "language": "en"},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(self.queue.get(review_id)["version"], 1)
+
+    def test_admin_draft_supports_legacy_uzbek_original(self):
+        receipt = new_receipt()
+        status, _, result = self.triage(ticket("Meni chatda haqorat qildi"), receipt)
+        self.assertEqual((status, result["draft_reply"]["lang"]), (200, "uz"))
+        review_id = self.admin_list()["items"][0]["id"]
+        status, _, body = self.request(
+            f"/admin/api/reviews/{review_id}/draft", method="POST", key=TEST_KEY,
+            value={"version": 1, "language": "kk"},
+        )
+        self.assertEqual((status, body["draft_reply"]["lang"]), (200, "kk"))
+        self.assertEqual(body["draft_reply"]["cited"], result["draft_reply"]["cited"])
+
+    def test_admin_draft_rejects_changes_that_occur_during_generation(self):
+        self.triage(receipt=new_receipt())
+        review_id = self.admin_list()["items"][0]["id"]
+        path = f"/admin/api/reviews/{review_id}/draft"
+        actual_triage = self.service.triage
+        calls = 0
+        def change_during_request(snapshot, *, reply_language=None):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.queue.update(review_id, 1, "in_progress", "Другая сохранённая правка")
+            return actual_triage(snapshot, reply_language=reply_language)
+        with patch.object(self.service, "triage", side_effect=change_during_request):
+            status, _, _ = self.request(path, method="POST", key=TEST_KEY, value={"version": 1, "language": "en"})
+        self.assertEqual((status, calls), (409, 2))
+        detail = self.queue.get(review_id)
+        self.assertEqual((detail["version"], detail["admin_draft"]), (2, "Другая сохранённая правка"))
+
     def test_claimed_rule_candidates_are_private_bounded_and_not_citations(self):
         payload = ticket("Прошу проверить пункт 2.1.", rule_refs_raw="2.1")
         payload["messages"].append({"role": "admin", "text": "3.4 SECRET_HISTORICAL_RESPONSE"})

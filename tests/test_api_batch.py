@@ -73,6 +73,24 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(result["draft_reply"]["cited"], ["2.1"])
         self.assertTrue(result["needs_human"])
 
+    def test_reply_language_override_and_invalid_choices_over_http(self):
+        original = "Игрок оскорбил меня в чате"
+        for language in ("ru", "en", "kk"):
+            payload = ticket(original, reply_language=language)
+            with self.post("/triage", json.dumps(payload, ensure_ascii=False).encode()) as response:
+                result = json.load(response)
+            self.assertEqual(result["lang"], "ru")
+            self.assertEqual(result["draft_reply"]["lang"], language)
+            self.assertEqual(result["draft_reply"]["cited"], ["2.1"])
+            self.assertIn("В игровом чате нельзя оскорблять", result["draft_reply"]["text"])
+            self.assertEqual(payload["messages"][0]["text"], original)
+        for language in ("es", None, [], "UNTRUSTED_MARKER"):
+            payload = ticket(original, reply_language=language)
+            with self.assertRaises(urllib.error.HTTPError) as failure:
+                self.post("/triage", json.dumps(payload, ensure_ascii=False).encode())
+            self.assertEqual(failure.exception.code, 400)
+            self.assertNotIn("UNTRUSTED_MARKER", json.dumps(json.load(failure.exception)))
+
     def test_mentions_are_unverified_and_server_is_a_string_over_http(self):
         payload = ticket("Игрок оскорбил меня, скриншоты есть", server=12)
         with self.post("/triage", json.dumps(payload, ensure_ascii=False).encode()) as response:
@@ -126,6 +144,16 @@ class BatchAndEvaluationTests(unittest.TestCase):
         self.assertEqual(rows[0]["category"], "complaint.insult")
         self.assertEqual(rows[1]["category"], "report.offtopic")
         self.assertNotIn("verdict", rows[0])
+
+    def test_batch_accepts_per_ticket_reply_language_without_changing_player_language(self):
+        inputs = [ticket("Игрок оскорбил меня в чате", reply_language=lang) for lang in ("ru", "en", "kk")]
+        input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"
+        input_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in inputs), encoding="utf-8")
+        self.assertEqual(predict(self.service, str(input_path), str(output_path)), 3)
+        rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["lang"] for row in rows], ["ru", "ru", "ru"])
+        self.assertEqual([row["draft_reply"]["lang"] for row in rows], ["ru", "en", "kk"])
+        self.assertEqual([row["draft_reply"]["cited"] for row in rows], [["2.1"]] * 3)
 
     def test_failure_does_not_overwrite_previous_output(self):
         input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"

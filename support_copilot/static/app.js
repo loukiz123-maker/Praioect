@@ -112,6 +112,7 @@ function persistSession() {
         message: $("message").value,
         attachments: $("attachments").value,
         reporter: $("reporter").value,
+        replyLanguage: $("reply-language").value,
       },
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
@@ -186,6 +187,8 @@ function restoreSession() {
         $("attachments").value = form.attachments;
       if (typeof form.reporter === "string")
         $("reporter").value = form.reporter;
+      if (["auto", "ru", "en", "kk"].includes(form.replyLanguage))
+        $("reply-language").value = form.replyLanguage;
     }
   } catch (_) {
     // A corrupt or inaccessible snapshot must not break the application.
@@ -431,6 +434,14 @@ function renderHandoff(item) {
   }
 }
 
+function updateDraftLanguage(item) {
+  const original = item?.originalResult?.draft_reply;
+  // A human can edit or insert a reply in a different language. Do not label
+  // arbitrary edited text as if it were still the original generated draft.
+  $("draft-text").lang =
+    original && item.editBuffer === original.text ? original.lang : "und";
+}
+
 function renderResult() {
   const item = currentItem();
   $("empty-state").hidden = Boolean(item);
@@ -496,8 +507,7 @@ function renderResult() {
   );
   $("draft-text").value = item.editBuffer;
   resizeDraft();
-  if (result.lang && result.lang !== "und") $("draft-text").lang = result.lang;
-  else $("draft-text").removeAttribute("lang");
+  updateDraftLanguage(item);
   $("draft-status").textContent =
     item.editBuffer !== result.draft_reply.text
       ? "Есть несохранённая правка"
@@ -538,19 +548,20 @@ function renderResult() {
 function isValidResult(result) {
   return Boolean(
     result &&
-    typeof result === "object" &&
-    typeof result.lang === "string" &&
-    typeof result.category === "string" &&
-    ["p0", "p1", "p2", "p3"].includes(result.priority) &&
-    typeof result.is_spam_or_duplicate === "boolean" &&
-    result.extracted &&
-    typeof result.extracted.has_evidence === "boolean" &&
-    result.draft_reply &&
-    typeof result.draft_reply.text === "string" &&
-    Array.isArray(result.draft_reply.cited) &&
-    typeof result.needs_human === "boolean" &&
-    Number.isFinite(result.confidence) &&
-    Array.isArray(result.reasons),
+      typeof result === "object" &&
+      typeof result.lang === "string" &&
+      typeof result.category === "string" &&
+      ["p0", "p1", "p2", "p3"].includes(result.priority) &&
+      typeof result.is_spam_or_duplicate === "boolean" &&
+      result.extracted &&
+      typeof result.extracted.has_evidence === "boolean" &&
+      result.draft_reply &&
+      ["ru", "kk", "uz", "en", "es", "pt"].includes(result.draft_reply.lang) &&
+      typeof result.draft_reply.text === "string" &&
+      Array.isArray(result.draft_reply.cited) &&
+      typeof result.needs_human === "boolean" &&
+      Number.isFinite(result.confidence) &&
+      Array.isArray(result.reasons),
   );
 }
 
@@ -657,6 +668,9 @@ async function sendTicket(event) {
     kind: state.kind,
     messages: [{ role: "player", text, attachments: amount }],
   };
+  const requestedReplyLanguage = $("reply-language").value;
+  if (requestedReplyLanguage !== "auto")
+    payload.reply_language = requestedReplyLanguage;
   const reporter = $("reporter").value.trim();
   if (reporter) payload.reporter_hash = reporter;
   const item = {
@@ -946,6 +960,7 @@ function bindEvents() {
     const item = currentItem();
     if (!item?.result) return;
     item.editBuffer = $("draft-text").value;
+    updateDraftLanguage(item);
     persistSession();
     resizeDraft();
     $("draft-status").textContent =
@@ -970,7 +985,15 @@ function bindEvents() {
   $("use-admin-answer").addEventListener("click", () => {
     const item = currentItem();
     if (!item?.result || typeof item.adminReply !== "string") return;
+    if (
+      item.editBuffer.trim() &&
+      item.editBuffer !== item.originalResult?.draft_reply?.text &&
+      item.editBuffer !== item.adminReply &&
+      !window.confirm(t("Заменить текущую правку ответом администратора?"))
+    )
+      return;
     item.editBuffer = item.adminReply;
+    updateDraftLanguage(item);
     persistSession();
     $("draft-text").value = item.adminReply;
     resizeDraft();
@@ -989,6 +1012,7 @@ function bindEvents() {
     event.returnValue = "";
   });
   document.addEventListener("copilot:languagechange", () => {
+    $("reply-language").options[0].textContent = t("По языку игрока (авто)");
     updateCharacterCount();
     renderQueue();
     renderResult();
@@ -1052,6 +1076,7 @@ async function checkHealth() {
   }
 }
 
+$("reply-language").options[0].textContent = t("По языку игрока (авто)");
 restoreSession();
 bindNavigation();
 bindEvents();

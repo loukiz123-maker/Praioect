@@ -65,6 +65,16 @@ class UiMarkupTests(unittest.TestCase):
         self.assertIn('$("result-announcement").textContent', self.script)
         self.assertIn('$("source-text").textContent = item.text', self.script)
 
+    def test_reply_language_is_separate_from_interface_and_persisted_for_the_form(self):
+        html = (STATIC / "index.html").read_text(encoding="utf-8")
+        select = re.search(r'<select\b[^>]*id="reply-language"[^>]*>(.*?)</select>', html, re.DOTALL)
+        self.assertIsNotNone(select)
+        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["auto", "ru", "en", "kk"])
+        self.assertIn('replyLanguage: $("reply-language").value', self.script)
+        self.assertIn("payload.reply_language = requestedReplyLanguage", self.script)
+        self.assertIn("original && item.editBuffer === original.text ? original.lang : \"und\"", self.script)
+        self.assertIn('id="language-switch"', html)
+
     def test_handoff_conflict_checks_status_without_losing_editor(self):
         self.assertIn("error.status = response.status", self.script)
         self.assertIn('error.status === 409) await refreshReview(item, { force: true })', self.script)
@@ -117,8 +127,7 @@ class UiMarkupTests(unittest.TestCase):
             "автоматически не восстановится с сервера",
             "14 дней после объявления победителей",
             "не переводятся",
-            "Авторазбор работает локально",
-            "перевод сообщения по запросу использует Google",
+            "без LLM и внешних API",
             "В проверенной выборке из 1000 обращений нет меток категорий и приоритетов",
             "проверка цитат и база знаний",
             "Автоматического обучения нет",
@@ -245,17 +254,18 @@ class AdminUiMarkupTests(unittest.TestCase):
         self.assertIn("escalated", filters)
         self.assertIn('/admin/api/feedback/export', self.script)
 
-    def test_google_translation_attribution_is_visible_with_the_result(self):
+    def test_local_reply_generator_has_three_languages_and_no_translation_widget(self):
         html = (STATIC / "admin.html").read_text(encoding="utf-8")
-        elements = self.markup.elements
-        badge = next(attrs for tag, attrs in elements if tag == "img" and attrs.get("src") == "/translated-by-google.png")
-        self.assertEqual(badge.get("alt"), "Powered by Google Translate")
-        link = next(attrs for tag, attrs in elements if tag == "a" and attrs.get("class") == "google-attribution")
-        self.assertEqual(link.get("href"), "https://translate.google.com/")
-        self.assertIn("noreferrer", link.get("rel", ""))
-        self.assertIn("THIS SERVICE MAY CONTAIN TRANSLATIONS POWERED BY GOOGLE.", html)
-        translated = next(attrs for _, attrs in elements if attrs.get("id") == "message-translation")
-        self.assertIn("data-i18n-preserve", translated)
+        select = re.search(r'<select\b[^>]*id="admin-reply-language"[^>]*>(.*?)</select>', html, re.DOTALL)
+        self.assertIsNotNone(select)
+        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["ru", "en", "kk"])
+        by_id = {attrs.get("id"): attrs for tag, attrs in self.markup.elements if tag == "button"}
+        self.assertEqual(by_id["generate-draft"].get("type"), "button")
+        self.assertIn('$("generate-draft").addEventListener("click", generateDraft)', self.script)
+        self.assertIn('body: { version, language }', self.script)
+        self.assertFalse((STATIC.parent / "translation.py").exists())
+        self.assertFalse((STATIC / "translated-by-google.png").exists())
+        self.assertNotIn("/translate", self.script)
 
     def test_no_browser_storage_or_html_injection_for_private_data(self):
         self.assertNotIn("localStorage", self.script)

@@ -3,7 +3,6 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#202338" />
     <title>Панель администратора — Grand Mobile</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -313,81 +312,7 @@
                   </div>
                   <div class="review-block">
                     <h3>Сообщение игрока</h3>
-                    <div class="message-comparison">
-                      <div>
-                        <span class="translation-label">Оригинал</span>
-                        <p
-                          class="review-message"
-                          id="review-message"
-                          role="region"
-                          aria-label="Оригинал сообщения игрока"
-                          tabindex="0"
-                        ></p>
-                      </div>
-                      <div id="message-translation-box" hidden>
-                        <span class="translation-label">Машинный перевод</span>
-                        <p
-                          class="review-message translated-message"
-                          id="message-translation"
-                          role="region"
-                          aria-label="Перевод сообщения игрока"
-                          tabindex="0"
-                          data-i18n-preserve
-                        ></p>
-                        <a
-                          class="google-attribution"
-                          href="https://translate.google.com/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          ><img
-                            src="/translated-by-google.png"
-                            width="176"
-                            height="16"
-                            alt="Powered by Google Translate"
-                        /></a>
-                      </div>
-                    </div>
-                    <div class="translation-actions">
-                      <button
-                        type="button"
-                        class="translate-button"
-                        id="translate-message"
-                        aria-describedby="translation-privacy translation-config translation-status"
-                        disabled
-                      >
-                        Перевести через Google
-                      </button>
-                      <span>На язык интерфейса</span>
-                    </div>
-                    <p class="translation-privacy" id="translation-privacy">
-                      После подтверждения сообщение отправляется в Google для
-                      перевода. Убедитесь, что передача разрешена.
-                    </p>
-                    <details class="translation-disclaimer">
-                      <summary>О машинном переводе</summary>
-                      <p>
-                        Автоматический перевод может содержать ошибки; сверяйте
-                        его с оригиналом.
-                      </p>
-                      <p lang="en" data-i18n-preserve>
-                        THIS SERVICE MAY CONTAIN TRANSLATIONS POWERED BY GOOGLE.
-                        GOOGLE DISCLAIMS ALL WARRANTIES RELATED TO THE
-                        TRANSLATIONS, EXPRESS OR IMPLIED, INCLUDING ANY
-                        WARRANTIES OF ACCURACY, RELIABILITY, AND ANY IMPLIED
-                        WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-                        PURPOSE AND NONINFRINGEMENT.
-                      </p>
-                    </details>
-                    <p
-                      class="translation-config"
-                      id="translation-config"
-                      role="status"
-                    ></p>
-                    <p
-                      class="translation-status"
-                      id="translation-status"
-                      role="status"
-                    ></p>
+                    <p class="review-message" id="review-message"></p>
                     <p class="review-context" id="review-context"></p>
                   </div>
                   <div class="review-reasons">
@@ -432,6 +357,35 @@
                     <p id="operator-draft-text"></p>
                   </details>
                   <div class="review-block draft-block">
+                    <div class="reply-generator">
+                      <label for="admin-reply-language">Язык автоответа</label>
+                      <div class="reply-generator-controls">
+                        <select
+                          id="admin-reply-language"
+                          aria-describedby="reply-generator-help"
+                        >
+                          <option value="ru">Русский</option>
+                          <option value="en">English</option>
+                          <option value="kk">Қазақша</option>
+                        </select>
+                        <button
+                          type="button"
+                          class="admin-secondary"
+                          id="generate-draft"
+                        >
+                          Создать черновик
+                        </button>
+                      </div>
+                      <p id="reply-generator-help" class="review-context">
+                        Локальный шаблон, не нейросеть. Проверьте ответ; цитаты
+                        правил остаются в оригинале.
+                      </p>
+                      <p
+                        id="reply-generator-availability"
+                        class="review-context"
+                        role="status"
+                      ></p>
+                    </div>
                     <label for="admin-draft">Ответ администратора</label>
                     <p>
                       Исправьте предложенный текст или напишите ответ

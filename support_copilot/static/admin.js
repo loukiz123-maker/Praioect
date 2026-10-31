@@ -19,10 +19,6 @@ const state = {
   busy: false,
   exportController: null,
   exportedCount: null,
-  translationAvailable: null,
-  translationMax: 5000,
-  translationSerial: 0,
-  translationController: null,
 };
 let sessionCheckSerial = 0;
 const statusNames = {
@@ -73,13 +69,8 @@ async function api(path, options = {}) {
   if (state.key) headers.Authorization = `Bearer ${state.key}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   const controller = new AbortController();
-  const abortFromCaller = () => controller.abort();
-  if (options.signal?.aborted) controller.abort();
-  else
-    options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timer = window.setTimeout(() => controller.abort(), 10000);
   let response;
-  let data;
   try {
     response = await fetch(path, {
       method: options.method || "GET",
@@ -90,12 +81,6 @@ async function api(path, options = {}) {
       credentials: "omit",
       signal: controller.signal,
     });
-    try {
-      data = await response.json();
-    } catch (error) {
-      if (error.name === "AbortError") throw error;
-      throw new ApiError("Сервис вернул некорректный ответ.", response.status);
-    }
   } catch (error) {
     if (error.name === "AbortError")
       throw new ApiError(
@@ -105,7 +90,12 @@ async function api(path, options = {}) {
     throw error;
   } finally {
     window.clearTimeout(timer);
-    options.signal?.removeEventListener("abort", abortFromCaller);
+  }
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    throw new ApiError("Сервис вернул некорректный ответ.", response.status);
   }
   if (!response.ok)
     throw new ApiError(
@@ -125,140 +115,79 @@ function formatDate(seconds) {
   }).format(new Date(seconds * 1000));
 }
 
-function updateTranslationControls() {
-  const text =
-    typeof state.detail?.message === "string" ? state.detail.message : "";
-  const tooLong = Array.from(text).length > state.translationMax;
-  $("translate-message").disabled =
-    !state.authenticated ||
-    state.translationAvailable !== true ||
-    !text.trim() ||
-    tooLong ||
-    state.busy ||
-    Boolean(state.translationController);
-  let message = "";
-  if (state.authenticated && state.detail) {
-    if (state.translationAvailable === null)
-      message = "Проверяем доступность перевода…";
-    else if (state.translationAvailable === "error")
-      message = "Не удалось проверить доступность перевода.";
-    else if (!state.translationAvailable)
-      message = "Google Перевод не настроен на сервере.";
-    else if (tooLong)
-      message =
-        "Сообщение слишком длинное для перевода (максимум 5000 символов).";
-  }
-  $("translation-config").textContent = t(message);
+function canGenerateDraft(detail) {
+  return Boolean(
+    detail?.result?.draft_reply && detail.rule_candidates !== null,
+  );
 }
 
-function clearMessageTranslation() {
-  state.translationSerial += 1;
-  state.translationController?.abort();
-  state.translationController = null;
-  $("message-translation-box").hidden = true;
-  $("message-translation").textContent = "";
-  $("message-translation").removeAttribute("lang");
-  $("translation-status").textContent = "";
-  updateTranslationControls();
+function updateDraftGenerator() {
+  const available = canGenerateDraft(state.detail);
+  $("admin-reply-language").disabled = state.busy || !available;
+  $("generate-draft").disabled = state.busy || !available;
+  $("reply-generator-availability").textContent =
+    state.detail && !available
+      ? "Автоматический черновик недоступен. Напишите ответ вручную."
+      : "";
 }
 
-async function refreshTranslationAvailability() {
-  const serial = sessionCheckSerial;
-  state.translationAvailable = null;
-  updateTranslationControls();
-  try {
-    const { data } = await api("/admin/api/translation");
-    if (!state.authenticated || serial !== sessionCheckSerial) return;
-    if (
-      typeof data?.configured !== "boolean" ||
-      !Number.isInteger(data.max_characters)
-    )
-      throw new Error("invalid status");
-    state.translationAvailable = data.configured;
-    state.translationMax = data.max_characters;
-  } catch (_) {
-    if (!state.authenticated || serial !== sessionCheckSerial) return;
-    state.translationAvailable = "error";
-  }
-  updateTranslationControls();
-}
-
-async function translateMessage() {
-  if (
-    !state.authenticated ||
-    !state.detail ||
-    state.translationAvailable !== true ||
-    state.translationController ||
-    state.busy
-  )
+async function generateDraft() {
+  if (!state.authenticated || state.busy || !canGenerateDraft(state.detail))
     return;
+  const current = $("admin-draft").value;
+  const initial = state.detail.result.draft_reply.text;
   if (
+    current.trim() &&
+    (state.dirty || current !== initial) &&
     !window.confirm(
       t(
-        "Отправить сообщение игрока в Google для перевода? Проверьте, что передача данных разрешена.",
+        "Заменить текущий текст новым черновиком? Несохранённые правки будут потеряны.",
       ),
     )
   )
     return;
   const { id, version } = state.detail;
-  const target = window.CopilotI18n.language;
-  clearMessageTranslation();
-  const serial = ++state.translationSerial;
-  const controller = new AbortController();
-  state.translationController = controller;
-  $("translation-status").textContent = t("Переводим сообщение…");
-  updateTranslationControls();
+  const language = $("admin-reply-language").value;
+  setBusy(true);
+  $("review-error").textContent = "";
   try {
     const { data } = await api(
-      `/admin/api/reviews/${encodeURIComponent(id)}/translate`,
+      `/admin/api/reviews/${encodeURIComponent(id)}/draft`,
       {
         method: "POST",
-        body: { target, version, consent: true },
-        signal: controller.signal,
+        body: { version, language },
       },
     );
     if (
-      controller.signal.aborted ||
-      serial !== state.translationSerial ||
       !state.authenticated ||
       state.selected !== id ||
-      state.detail?.version !== version ||
-      window.CopilotI18n.language !== target
+      state.detail?.version !== version
     )
       return;
     if (
-      typeof data?.translation !== "string" ||
-      !data.translation.trim() ||
-      data.target !== target
+      data?.version !== version ||
+      data?.draft_reply?.lang !== language ||
+      typeof data.draft_reply.text !== "string" ||
+      !data.draft_reply.text.trim()
     )
       throw new ApiError(
-        "Не удалось получить перевод Google. Проверьте настройку и сеть.",
-        502,
+        "Не удалось создать черновик. Попробуйте ещё раз.",
+        500,
       );
-    $("message-translation").textContent = data.translation;
-    $("message-translation").lang = target;
-    $("message-translation-box").hidden = false;
-    $("translation-status").textContent = t(
-      "Перевод готов. Проверьте его по оригиналу.",
-    );
+    $("admin-draft").value = data.draft_reply.text;
+    $("admin-draft").lang = language;
+    state.dirty = true;
+    $("review-notice").textContent =
+      "Черновик создан локально. Проверьте и сохраните его; игроку он не отправлен.";
+    $("admin-draft").focus();
   } catch (error) {
-    if (
-      controller.signal.aborted ||
-      serial !== state.translationSerial ||
-      !state.authenticated
-    )
-      return;
-    $("translation-status").textContent = t(
+    if (!state.authenticated || state.selected !== id) return;
+    $("review-error").textContent =
       error instanceof TypeError
-        ? "Нет связи с сервером. Перевод не получен."
-        : error.message ||
-            "Не удалось получить перевод Google. Проверьте настройку и сеть.",
-    );
+        ? "Нет связи с сервером. Черновик не создан."
+        : error.message || "Не удалось создать черновик. Попробуйте ещё раз.";
   } finally {
-    if (serial === state.translationSerial) {
-      state.translationController = null;
-      updateTranslationControls();
-    }
+    setBusy(false);
   }
 }
 
@@ -281,8 +210,6 @@ function showLogin(message = "") {
   state.detail = null;
   state.dirty = false;
   state.busy = false;
-  state.translationAvailable = null;
-  clearMessageTranslation();
   $("dashboard").hidden = true;
   $("logout-button").hidden = true;
   $("login-screen").hidden = false;
@@ -315,6 +242,9 @@ function showLogin(message = "") {
   $("rule-candidates").open = false;
   $("operator-draft-text").textContent = "";
   $("admin-draft").value = "";
+  $("admin-draft").removeAttribute("lang");
+  $("admin-reply-language").value = "ru";
+  $("reply-generator-availability").textContent = "";
   $("review-notice").textContent = "";
   $("review-error").textContent = "";
   $("admin-key").value = "";
@@ -330,7 +260,7 @@ async function enterDashboard() {
   $("logout-button").hidden = false;
   $("login-error").textContent = "";
   $("admin-key").value = "";
-  await Promise.all([refreshList(), refreshTranslationAvailability()]);
+  await refreshList();
 }
 
 function updateFilterButtons() {
@@ -476,7 +406,7 @@ function renderDetailText(detail) {
   $("review-priority").textContent =
     priorityNames[detail.result?.priority] || "Не определён";
   $("review-created").textContent = formatDate(detail.created_at);
-  // Keep the original unchanged; the optional translation is displayed separately.
+  // Player messages and rule references are never translated or modified.
   $("review-message").textContent =
     detail.message || t("Сообщение не указано.");
   const meta = detail.metadata || {};
@@ -544,16 +474,20 @@ function renderDetailText(detail) {
 }
 
 function renderDetail(detail) {
-  if (state.selected !== detail.id) $("rule-candidates").open = false;
-  if (
-    state.selected !== detail.id ||
-    state.detail?.version !== detail.version ||
-    state.detail?.message !== detail.message
-  )
-    clearMessageTranslation();
+  const sameReview = state.selected === detail.id;
+  if (!sameReview) $("rule-candidates").open = false;
   state.detail = detail;
   state.selected = detail.id;
   state.dirty = false;
+  if (!sameReview) {
+    const originalLanguage = detail.result?.draft_reply?.lang;
+    $("admin-reply-language").value = ["ru", "en", "kk"].includes(
+      originalLanguage,
+    )
+      ? originalLanguage
+      : "ru";
+  }
+  updateDraftGenerator();
   $("review-empty").hidden = true;
   $("review-content").hidden = false;
   renderDetailText(detail);
@@ -561,6 +495,9 @@ function renderDetail(detail) {
   $("operator-draft-text").textContent = detail.operator_draft || "";
   $("admin-draft").value =
     detail.admin_draft === null ? detail.operator_draft : detail.admin_draft;
+  if ($("admin-draft").value === detail.result?.draft_reply?.text)
+    $("admin-draft").lang = detail.result.draft_reply.lang;
+  else $("admin-draft").lang = "und";
   $("review-notice").textContent =
     detail.status === "resolved"
       ? "Ответ подготовлен и доступен оператору, пока доступна его очередь. Игроку он не отправлен."
@@ -582,7 +519,6 @@ function renderDetail(detail) {
   $("escalate-review").disabled = state.busy || detail.status === "escalated";
   $("escalate-review").textContent =
     detail.status === "escalated" ? "Эскалировано" : "Эскалировать";
-  updateTranslationControls();
   renderList();
 }
 
@@ -594,7 +530,6 @@ async function selectReview(id, { force = false } = {}) {
     !window.confirm(t("Есть несохранённые правки. Перейти без сохранения?"))
   )
     return;
-  if (state.selected !== id) clearMessageTranslation();
   const serial = ++state.selectionSerial;
   try {
     const { data } = await api(`/admin/api/reviews/${encodeURIComponent(id)}`);
@@ -613,10 +548,7 @@ async function selectReview(id, { force = false } = {}) {
 
 function setBusy(busy) {
   state.busy = busy;
-  if (busy) {
-    state.selectionSerial += 1;
-    clearMessageTranslation();
-  }
+  if (busy) state.selectionSerial += 1;
   $("admin-draft").readOnly = busy;
   $("review-content").setAttribute("aria-busy", String(busy));
   for (const id of [
@@ -632,7 +564,7 @@ function setBusy(busy) {
     $(id).disabled =
       busy ||
       (id === "escalate-review" && state.detail?.status === "escalated");
-  updateTranslationControls();
+  updateDraftGenerator();
 }
 
 async function updateReview(status) {
@@ -848,9 +780,14 @@ $("queue-next").addEventListener("click", () => {
   refreshList();
 });
 $("refresh-queue").addEventListener("click", refreshList);
-$("translate-message").addEventListener("click", translateMessage);
+$("generate-draft").addEventListener("click", generateDraft);
 $("admin-draft").addEventListener("input", () => {
   state.dirty = true;
+  const original = state.detail?.result?.draft_reply;
+  $("admin-draft").lang =
+    original && $("admin-draft").value === original.text
+      ? original.lang
+      : "und";
   $("review-notice").textContent = "Есть несохранённые правки.";
 });
 $("take-button").addEventListener("click", () => updateReview("in_progress"));
@@ -869,7 +806,6 @@ $("reload-review").addEventListener("click", () => {
 $("delete-review").addEventListener("click", deleteReview);
 document.addEventListener("copilot:languagechange", () => {
   if (!state.authenticated) return;
-  clearMessageTranslation();
   renderList();
   renderPagination();
   if (state.detail) renderDetailText(state.detail);

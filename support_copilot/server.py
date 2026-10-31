@@ -29,18 +29,15 @@ from .admin_queue import (
 )
 from .catalog import CatalogError
 from .config import add_data_arguments, make_service
-from .service import NAMED_RULE_REASON, RULE_REF_RE, InputError, TriageService, validate_ticket
-from .text import SUPPORTED_LANGUAGES
-from .translation import (
-    MAX_TRANSLATED_CHARACTERS,
-    MAX_TRANSLATION_CHARACTERS,
-    TARGET_LANGUAGES,
-    GoogleTranslator,
-    TranslationBusy,
-    TranslationLimiter,
-    TranslationRateLimited,
-    TranslationUnavailable,
+from .service import (
+    NAMED_RULE_REASON,
+    REPLY_LANGUAGE_CHOICES,
+    RULE_REF_RE,
+    InputError,
+    TriageService,
+    validate_ticket,
 )
+from .text import SUPPORTED_LANGUAGES
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_REQUEST_BYTES = 1_048_576
@@ -56,7 +53,6 @@ ASSETS = {
     "/brand-g.svg": "brand-g.svg",
     "/favicon.svg": "favicon.svg",
     "/city-banner.jpg": "city-banner.jpg",
-    "/translated-by-google.png": "translated-by-google.png",
 }
 RESULT_KEYS = {
     "lang", "category", "priority", "is_spam_or_duplicate", "extracted",
@@ -148,13 +144,10 @@ class CopilotServer(ThreadingHTTPServer):
     def __init__(
         self, server_address: tuple[str, int], service: TriageService | None,
         queue: AdminQueue | None = None, admin_key: str | None = None,
-        translator: GoogleTranslator | None = None,
     ):
         self.service = service
         self.queue = queue if admin_key else None
         self.admin_key = admin_key if queue else None
-        self.translator = translator if translator is not None else GoogleTranslator(None)
-        self.translation_limiter = TranslationLimiter()
         self.auth_lock = threading.Lock()
         self.auth_failures: dict[str, list[float]] = {}
         super().__init__(server_address, CopilotHandler)
@@ -319,45 +312,74 @@ class CopilotHandler(BaseHTTPRequestHandler):
         prefix = "/admin/api/reviews/"
         return path[len(prefix):] if path.startswith(prefix) else None
 
-    def _admin_translation_id(self, path: str) -> str | None:
-        prefix, suffix = "/admin/api/reviews/", "/translate"
+    def _admin_draft_id(self, path: str) -> str | None:
+        prefix, suffix = "/admin/api/reviews/", "/draft"
         if path.startswith(prefix) and path.endswith(suffix):
             return path[len(prefix):-len(suffix)]
         return None
 
-    def _translate_review(self, review_id: str, body: Any) -> None:
-        """Translate only the stored player message, never arbitrary client text."""
-        if not isinstance(body, dict) or set(body) != {"target", "version", "consent"}:
-            raise HttpFailure(400, "Некорректный запрос перевода.")
-        if body["consent"] is not True:
-            raise HttpFailure(400, "Для перевода подтвердите передачу сообщения в Google.")
-        target, version = body["target"], body["version"]
-        if not isinstance(target, str) or target not in TARGET_LANGUAGES:
-            raise HttpFailure(400, "Неверный язык перевода.")
+    def _make_admin_draft(self, review_id: str, body: Any) -> None:
+        """Recreate a draft locally without translating messages or saving edits."""
+        if not isinstance(body, dict) or set(body) != {"version", "language"}:
+            raise InputError("Неверные параметры создания черновика.")
+        version, language = body["version"], body["language"]
         if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-            raise HttpFailure(400, "Не указана версия обращения")
-        detail = self._queue().get(review_id)
+            raise InputError("Не указана версия обращения")
+        if not isinstance(language, str) or language not in REPLY_LANGUAGE_CHOICES:
+            raise InputError("Выберите язык ответа: RU, EN или KK.")
+        queue = self._queue()
+        detail = queue.get(review_id)
         if detail["version"] != version:
-            raise HttpFailure(409, "Обращение изменилось. Обновите карточку перед переводом.")
-        message = detail["message"]
-        if not isinstance(message, str) or not message.strip():
-            raise HttpFailure(400, "Сообщение для перевода пустое.")
-        if len(message) > MAX_TRANSLATION_CHARACTERS:
-            raise HttpFailure(413, "Сообщение слишком длинное для перевода (максимум 5000 символов).")
-        if not self.server.translator.configured:
-            raise HttpFailure(503, "Google Перевод не настроен на сервере.")
+            raise QueueConflict("Обращение изменилось. Обновите карточку перед созданием черновика.")
+        service = self.server.service
+        original = detail.get("result")
+        if not service or not valid_result(original, service):
+            raise HttpFailure(503, "Автоматический черновик недоступен. Напишите ответ вручную.")
+
+        # Only the server-side snapshot is used. Never accept replacement text
+        # from the request, consult historical admin responses, or add another
+        # event to the duplicate detector (the private reporter hash is absent).
+        meta = detail.get("metadata") or {}
+        ticket = {
+            "kind": detail["kind"],
+            "messages": [{
+                "role": "player",
+                "text": detail["message"],
+                "attachments": int(bool(meta.get("attachments_indicated"))),
+            }],
+            "server": meta.get("server"),
+            "reported_nick": meta.get("reported_nick"),
+            "rule_refs_raw": meta.get("rule_refs_raw"),
+        }
+        if original["lang"] in SUPPORTED_LANGUAGES:
+            ticket["lang"] = original["lang"]
         try:
-            with self.server.translation_limiter.acquire():
-                translated = self.server.translator.translate(message, target)
-        except TranslationRateLimited:
-            raise HttpFailure(429, "Слишком много запросов перевода. Подождите минуту.") from None
-        except TranslationBusy:
-            raise HttpFailure(503, "Перевод занят. Попробуйте ещё раз.") from None
-        except TranslationUnavailable:
-            raise HttpFailure(502, "Не удалось получить перевод Google. Проверьте настройку и сеть.") from None
-        if not isinstance(translated, str) or not translated.strip() or len(translated) > MAX_TRANSLATED_CHARACTERS:
-            raise HttpFailure(502, "Не удалось получить перевод Google. Проверьте настройку и сеть.")
-        self._json(200, {"translation": translated, "target": target})
+            baseline = service.triage(ticket, reply_language=original["draft_reply"]["lang"])
+            candidate = service.triage(ticket, reply_language=language)
+        except Exception as exc:
+            # Old queue snapshots or a changed model/catalog can be incomplete.
+            # Never expose ticket text, credentials, or raw error details.
+            print(f"Ошибка подготовки черновика: {type(exc).__name__}", file=sys.stderr)
+            raise HttpFailure(503, "Автоматический черновик недоступен. Напишите ответ вручную.") from None
+        if not valid_result(baseline, service) or not valid_result(candidate, service):
+            raise HttpFailure(503, "Автоматический черновик недоступен. Напишите ответ вручную.")
+        # For older records, reconstruct the same recommendation first. If the
+        # available snapshot or rules differ, fail closed rather than silently
+        # present a different category, excerpt, or risk recommendation.
+        comparable = ("lang", "category", "priority")
+        if (
+            any(baseline[key] != original[key] for key in comparable)
+            or baseline["extracted"]["has_evidence"] != original["extracted"]["has_evidence"]
+            or baseline["draft_reply"] != original["draft_reply"]
+            or any(candidate[key] != baseline[key] for key in comparable)
+            or candidate["extracted"]["has_evidence"] != baseline["extracted"]["has_evidence"]
+            or candidate["draft_reply"]["cited"] != baseline["draft_reply"]["cited"]
+            or candidate["draft_reply"]["lang"] != language
+        ):
+            raise QueueConflict("Исходный черновик изменился. Проверьте обращение и напишите ответ вручную.")
+        if queue.get(review_id)["version"] != version:
+            raise QueueConflict("Обращение изменилось. Обновите карточку перед созданием черновика.")
+        self._json(200, {"draft_reply": candidate["draft_reply"], "version": version})
 
     def _with_rule_candidates(self, detail: dict[str, Any]) -> dict[str, Any]:
         """Show possible source clauses to an authenticated human, not as citations."""
@@ -399,9 +421,6 @@ class CopilotHandler(BaseHTTPRequestHandler):
             elif path == "/admin/api/session":
                 self._authorize()
                 self._json(200, {"authenticated": True})
-            elif path == "/admin/api/translation":
-                self._authorize()
-                self._json(200, {"configured": self.server.translator.configured, "max_characters": MAX_TRANSLATION_CHARACTERS})
             elif path == "/admin/api/feedback/export":
                 self._authorize()
                 self._feedback_export()
@@ -441,9 +460,9 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 self._triage(self._body())
             elif path == "/reviews/request":
                 self._review_request(self._body())
-            elif (review_id := self._admin_translation_id(path)) is not None:
+            elif (review_id := self._admin_draft_id(path)) is not None:
                 self._authorize()
-                self._translate_review(review_id, self._body())
+                self._make_admin_draft(review_id, self._body())
             elif (review_id := self._admin_detail_id(path)) is not None:
                 self._authorize()
                 body = self._body()
@@ -519,8 +538,7 @@ def main() -> int:
         print(f"Автоматический разбор недоступен: {type(exc).__name__}", file=sys.stderr)
         service = None
     try:
-        translator = GoogleTranslator(os.environ.get("GOOGLE_TRANSLATE_API_KEY"))
-        server = CopilotServer((args.host, args.port), service, queue, key, translator)
+        server = CopilotServer((args.host, args.port), service, queue, key)
     except OSError as exc:
         print(str(exc), file=sys.stderr)
         return 2
