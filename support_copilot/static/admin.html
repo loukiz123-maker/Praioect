@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#202338" />
+    <title>Панель администратора — Grand Mobile</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/admin.css" />
+    <script src="/i18n.js" defer></script>
+    <script src="/admin.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#admin-main">Перейти к содержимому</a>
+    <div class="admin-shell">
+      <aside class="admin-rail" aria-label="Навигация администратора">
+        <a
+          class="admin-brand"
+          href="/"
+          aria-label="Grand Mobile Support Copilot, на главную"
+        >
+          <img src="/brand-g.svg" alt="" width="45" height="45" />
+          <span>
+            <strong>GRAND MOBILE</strong> <small>SUPPORT COPILOT</small>
+          </span>
+        </a>
+        <div class="rail-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+        <nav class="admin-nav" aria-label="Панель администратора">
+          <a
+            class="admin-nav-link current"
+            href="/admin"
+            aria-label="Очередь проверки"
+            aria-current="page"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+              <circle cx="7" cy="6.5" r="1.2" />
+              <circle cx="7" cy="12" r="1.2" />
+              <circle cx="7" cy="17.5" r="1.2" />
+            </svg>
+            <span>Очередь проверки</span>
+          </a>
+          <a class="admin-nav-link" href="/" aria-label="К разбору обращений">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 6 3.5 12 9 18M4 12h16" />
+            </svg>
+            <span>К разбору обращений</span>
+          </a>
+        </nav>
+        <div class="rail-note">
+          <div class="rail-note-icon" aria-hidden="true">✓</div>
+          <strong>Решение за вами</strong>
+          <p>Проверяйте факты и правила перед тем, как подготовить ответ.</p>
+        </div>
+      </aside>
+
+      <main class="admin-main" id="admin-main" tabindex="-1">
+        <header class="admin-topbar">
+          <div class="admin-breadcrumb">
+            <span>Центр поддержки</span><span aria-hidden="true">/</span
+            ><strong>Администратор</strong>
+          </div>
+          <div class="admin-top-actions">
+            <div class="language-control">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path
+                  d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"
+                ></path>
+              </svg>
+              <label class="sr-only" for="language-switch"
+                >Язык интерфейса</label
+              >
+              <select id="language-switch" data-i18n-preserve>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+                <option value="kk">Қазақша</option>
+              </select>
+            </div>
+            <a href="/" class="back-link">← К разбору</a>
+            <button
+              type="button"
+              id="logout-button"
+              class="logout-button"
+              hidden
+            >
+              Выйти
+            </button>
+          </div>
+        </header>
+
+        <div class="admin-page">
+          <div
+            id="preview-warning"
+            class="preview-warning"
+            role="status"
+            hidden
+          >
+            Демо-предпросмотр без отдельного входа. Не используйте реальные
+            данные в этом режиме.
+          </div>
+
+          <section
+            class="login-screen"
+            id="login-screen"
+            aria-labelledby="login-title"
+          >
+            <div class="login-card">
+              <div class="login-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M12 3.5 19 6v5.1c0 4.5-2.8 7.7-7 9.4-4.2-1.7-7-4.9-7-9.4V6l7-2.5Z"
+                  />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </div>
+              <div class="admin-kicker">ДОСТУП ДЛЯ АДМИНИСТРАТОРА</div>
+              <h1 id="login-title">Вход в админку<span>.</span></h1>
+              <p class="login-lead">
+                В очереди могут быть личные данные игроков. Введите ключ, чтобы
+                открыть обращения.
+              </p>
+              <form id="login-form" novalidate>
+                <label for="admin-key">Ключ доступа</label>
+                <input
+                  id="admin-key"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                  aria-describedby="key-help login-error"
+                />
+                <p class="login-help" id="key-help">
+                  При первом запуске ключ создаётся в файле
+                  <code>data/admin.key</code> на компьютере сервера. Не
+                  отправляйте его другим.
+                </p>
+                <p class="admin-error" id="login-error" role="alert"></p>
+                <button type="submit" class="admin-primary" id="login-button">
+                  Открыть админку <span aria-hidden="true">→</span>
+                </button>
+              </form>
+              <a class="login-back" href="/">← Вернуться к разбору</a>
+            </div>
+          </section>
+
+          <section id="dashboard" hidden aria-labelledby="dashboard-title">
+            <div class="dashboard-heading">
+              <div>
+                <div class="admin-kicker">
+                  <span aria-hidden="true"></span> GRAND MOBILE / ПАНЕЛЬ
+                  АДМИНИСТРАТОРА
+                </div>
+                <h1 id="dashboard-title">Рабочая очередь<span>.</span></h1>
+                <p>
+                  Обращения, где нужна ваша проверка или автоматический разбор
+                  не сработал.
+                </p>
+              </div>
+              <div class="heading-tag">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <strong>Ручная проверка</strong
+                  ><small>Решение принимает человек</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-stats" aria-label="Статусы очереди">
+              <div class="admin-stat">
+                <span class="admin-stat-icon violet" aria-hidden="true">◷</span
+                ><span
+                  ><small>Ожидают проверки</small
+                  ><strong id="count-waiting">0</strong></span
+                >
+              </div>
+              <div class="admin-stat">
+                <span class="admin-stat-icon blue" aria-hidden="true">↗</span
+                ><span
+                  ><small>В работе</small
+                  ><strong id="count-in-progress">0</strong></span
+                >
+              </div>
+              <div class="admin-stat">
+                <span class="admin-stat-icon coral" aria-hidden="true">!</span
+                ><span
+                  ><small>Эскалировано</small
+                  ><strong id="count-escalated">0</strong></span
+                >
+              </div>
+              <div class="admin-stat">
+                <span class="admin-stat-icon green" aria-hidden="true">✓</span
+                ><span
+                  ><small>Ответ подготовлен</small
+                  ><strong id="count-resolved">0</strong></span
+                >
+              </div>
+            </div>
+
+            <div class="admin-workspace">
+              <section
+                class="admin-panel queue-panel"
+                aria-labelledby="admin-queue-title"
+              >
+                <div class="admin-panel-heading">
+                  <div>
+                    <div class="admin-section-kicker">01 / ОБРАЩЕНИЯ</div>
+                    <h2 id="admin-queue-title">Очередь проверки</h2>
+                    <p>Обновляется автоматически.</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    id="refresh-queue"
+                    aria-label="Обновить очередь"
+                  >
+                    ↻
+                  </button>
+                </div>
+                <div
+                  class="filter-group"
+                  role="group"
+                  aria-label="Фильтр очереди"
+                >
+                  <button
+                    type="button"
+                    class="filter-button selected"
+                    data-filter="active"
+                    aria-pressed="true"
+                  >
+                    Активные
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    data-filter="escalated"
+                    aria-pressed="false"
+                  >
+                    Эскалации
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    data-filter="resolved"
+                    aria-pressed="false"
+                  >
+                    Готовые
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-button"
+                    data-filter="all"
+                    aria-pressed="false"
+                  >
+                    Все
+                  </button>
+                </div>
+                <p id="queue-message" class="queue-message" role="status">
+                  Загружаем очередь…
+                </p>
+                <div id="admin-list" class="admin-list"></div>
+                <div class="queue-pagination" id="queue-pagination" hidden>
+                  <button type="button" id="queue-previous">← Назад</button>
+                  <span id="queue-page"></span>
+                  <button type="button" id="queue-next">Вперёд →</button>
+                </div>
+                <p class="queue-footnote" id="list-footnote">
+                  Записи старше 14 дней удаляются при следующем обращении к
+                  очереди. Данные хранятся только на этом сервере.
+                </p>
+              </section>
+
+              <section
+                class="admin-panel review-panel"
+                aria-labelledby="review-title"
+              >
+                <div class="admin-panel-heading review-heading">
+                  <div>
+                    <div class="admin-section-kicker">02 / ПРОВЕРКА</div>
+                    <h2 id="review-title">Карточка обращения</h2>
+                    <p>Посмотрите детали и подготовьте ответ.</p>
+                  </div>
+                  <span class="review-mark" aria-hidden="true">✓</span>
+                </div>
+                <div id="review-empty" class="review-empty">
+                  <div class="review-empty-icon" aria-hidden="true">▤</div>
+                  <h3>Выберите обращение</h3>
+                  <p>
+                    Здесь будут текст игрока, причина передачи и черновик для
+                    вашей проверки.
+                  </p>
+                </div>
+                <div id="review-content" hidden>
+                  <div class="review-top">
+                    <span id="review-reference" class="review-reference"></span
+                    ><span id="review-status" class="review-status"></span>
+                  </div>
+                  <div class="review-facts">
+                    <div>
+                      <span>Причина передачи</span
+                      ><strong id="review-source">—</strong>
+                    </div>
+                    <div>
+                      <span>Приоритет</span
+                      ><strong id="review-priority">—</strong>
+                    </div>
+                    <div>
+                      <span>Получено</span
+                      ><strong id="review-created">—</strong>
+                    </div>
+                  </div>
+                  <div class="review-block">
+                    <h3>Сообщение игрока</h3>
+                    <p class="review-message" id="review-message"></p>
+                    <p class="review-context" id="review-context"></p>
+                  </div>
+                  <div class="review-reasons">
+                    <strong
+                      ><span aria-hidden="true">!</span> Почему нужна
+                      проверка</strong
+                    >
+                    <ul id="review-reasons"></ul>
+                  </div>
+                  <details
+                    class="operator-draft rule-candidates"
+                    id="rule-candidates"
+                    hidden
+                  >
+                    <summary>
+                      Возможные пункты по указанному номеру
+                      <span aria-hidden="true">⌄</span>
+                    </summary>
+                    <p>
+                      Это варианты для проверки, не подтверждённые цитаты.
+                      Одинаковые номера встречаются в разных разделах; проверьте
+                      смысл и доказательства.
+                    </p>
+                    <p id="rule-candidates-empty" hidden>
+                      Пункты с указанными номерами не найдены.
+                    </p>
+                    <ol id="rule-candidates-list" data-i18n-preserve></ol>
+                    <p id="rule-candidates-truncated" hidden>
+                      Показаны не все варианты; проверьте остальные в исходном
+                      файле правил.
+                    </p>
+                  </details>
+                  <details
+                    class="operator-draft"
+                    id="operator-draft-section"
+                    hidden
+                  >
+                    <summary>
+                      Посмотреть черновик оператора
+                      <span aria-hidden="true">⌄</span>
+                    </summary>
+                    <p id="operator-draft-text"></p>
+                  </details>
+                  <div class="review-block draft-block">
+                    <label for="admin-draft">Ответ администратора</label>
+                    <p>
+                      Исправьте предложенный текст или напишите ответ
+                      самостоятельно.
+                    </p>
+                    <textarea
+                      id="admin-draft"
+                      rows="8"
+                      maxlength="100000"
+                      aria-describedby="admin-draft-help"
+                    ></textarea>
+                    <p class="review-context" id="admin-draft-help">
+                      Сохранённые правки учитываются как обратная связь. После
+                      отправки ответ появится оператору в его очереди; игроку он
+                      автоматически не отправляется.
+                    </p>
+                  </div>
+                  <p id="review-notice" class="review-notice" role="status"></p>
+                  <p id="review-error" class="admin-error" role="alert"></p>
+                  <div class="review-actions">
+                    <button
+                      type="button"
+                      class="admin-primary"
+                      id="resolve-button"
+                    >
+                      <span id="resolve-label">Отправить оператору</span
+                      ><span aria-hidden="true">→</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-secondary"
+                      id="save-button"
+                    >
+                      Сохранить черновик
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-secondary"
+                      id="edit-button"
+                    >
+                      Править ответ
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-escalate"
+                      id="escalate-review"
+                      aria-describedby="escalation-help"
+                    >
+                      Эскалировать
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-text-button"
+                      id="take-button"
+                    >
+                      Взять в работу
+                    </button>
+                  </div>
+                  <p class="escalation-help" id="escalation-help">
+                    Эскалация помечает обращение в этой очереди для
+                    дополнительной проверки. Отдельных уведомлений и назначений
+                    пока нет.
+                  </p>
+                  <div class="review-bottom">
+                    <button
+                      type="button"
+                      id="reload-review"
+                      class="admin-text-button"
+                    >
+                      Обновить карточку
+                    </button>
+                    <button
+                      type="button"
+                      id="delete-review"
+                      class="delete-button"
+                    >
+                      Удалить из очереди
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+            <section class="feedback-panel" aria-labelledby="feedback-title">
+              <div class="feedback-copy">
+                <div class="admin-section-kicker">03 / ОБРАТНАЯ СВЯЗЬ</div>
+                <h2 id="feedback-title">Правки для будущего обучения</h2>
+                <p>
+                  Сохранено обращений с обратной связью:
+                  <strong id="feedback-count">0</strong>. Черновики и
+                  подтверждённые ответы помечаются отдельно; обучение
+                  автоматически не запускается.
+                </p>
+                <p class="feedback-privacy">
+                  Выгрузка содержит текст обращений и ответов. Храните её
+                  приватно и удаляйте по правилам проекта.
+                </p>
+              </div>
+              <div class="feedback-actions">
+                <button
+                  type="button"
+                  id="export-feedback"
+                  class="admin-secondary"
+                >
+                  Скачать правки JSONL
+                </button>
+                <p
+                  id="feedback-status"
+                  class="feedback-status"
+                  role="status"
+                ></p>
+              </div>
+            </section>
+            <div class="admin-disclaimer">
+              <span aria-hidden="true">i</span>
+              <p>
+                <strong>Администратор проверяет факты.</strong> Вложения не
+                открываются, а отправка ответа в игру пока не подключена.
+              </p>
+            </div>
+            <footer class="admin-footer">
+              <span>SUPPORT COPILOT · GRAND MOBILE</span
+              ><span>DECENTRATHON 6.0</span>
+            </footer>
+          </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

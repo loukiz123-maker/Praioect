@@ -1,0 +1,37 @@
+# Организаторские данные и любые результаты работы с ними не публикуются.
+/data/
+/input/
+/inputs/
+/output/
+/outputs/
+/rules.json
+/taxonomy.json
+/knowledge.json
+*.jsonl
+*.jsonl.gz
+# Валидация иногда поставляется как HTML-обёртка с сырыми JSON-строками.
+[tT]ickets_*.[Hh][Tt][Mm][Ll]
+[tT]ickets_*.[Hh][Tt][Mm]
+[tT]ickets_*.zip
+.copilot-*.tmp
+*.csv
+*.arb
+*.parquet
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.key
+*.pem
+
+# Python / editor artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+*.log
+.pytest_cache/
+.DS_Store
