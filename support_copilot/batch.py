@@ -15,6 +15,8 @@ from typing import Iterator, TextIO
 
 from .catalog import CatalogError
 from .config import add_data_arguments, make_service
+from .json_data import strict_json_loads
+from .result_validation import checked_triage
 from .service import InputError, TriageService
 
 
@@ -51,8 +53,8 @@ def iter_tickets(path: str) -> Iterator[tuple[int, dict]]:
             if html_wrapped and not stripped.startswith("{"):
                 raise InputError(f"Строка {line_number}: неподдерживаемая строка HTML-обёртки")
             try:
-                ticket = json.loads(line)
-            except json.JSONDecodeError as exc:
+                ticket = strict_json_loads(line)
+            except (ValueError, RecursionError) as exc:
                 raise InputError(f"Строка {line_number}: некорректный JSON") from exc
             if not isinstance(ticket, dict):
                 raise InputError(f"Строка {line_number}: ожидается объект")
@@ -66,12 +68,16 @@ def _write_predictions(service: TriageService, input_path: str, output: TextIO) 
     count = 0
     for line_number, ticket in iter_tickets(input_path):
         try:
-            prediction = service.triage(ticket)
+            prediction = checked_triage(service, ticket)
         except InputError as exc:
             raise InputError(f"Строка {line_number}: {exc}") from exc
         if ticket.get("ticket_id") is not None:
             prediction = {"ticket_id": ticket["ticket_id"], **prediction}
-        output.write(json.dumps(prediction, ensure_ascii=False, separators=(",", ":")) + "\n")
+        try:
+            encoded = json.dumps(prediction, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise InputError(f"Строка {line_number}: не удалось сформировать корректный JSON") from exc
+        output.write(encoded + "\n")
         count += 1
     return count
 

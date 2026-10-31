@@ -41,6 +41,7 @@ if (!executablePath)
       ru: "База знаний не подключена. Поиск инструкций недоступен; черновики требуют проверки администратором.",
       en: "The knowledge base is not connected. Instructions cannot be searched; drafts require administrator review.",
       kk: "Білім базасы қосылмаған. Нұсқауларды іздеу қолжетімсіз; жауап жобаларын әкімші тексеруі керек.",
+      uz: "Bilimlar bazasi ulanmagan. Yo‘riqnomalarni qidirib bo‘lmaydi; qoralamalarni administrator tekshirishi kerak.",
     };
     await page.addScriptTag({ path: require.resolve("axe-core/axe.min.js") });
     for (const width of [320, 800, 1440]) {
@@ -139,7 +140,7 @@ if (!executablePath)
     }
     assert.deepEqual(errors, []);
     console.log(
-      "Knowledge status and operator/admin RU/EN/KK, 3 widths and axe: passed",
+      "Knowledge status and operator/admin RU/EN/KK/UZ, 3 widths and axe: passed",
     );
   } finally {
     await browser.close();

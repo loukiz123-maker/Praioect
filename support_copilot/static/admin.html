@@ -73,9 +73,10 @@
                 >Язык интерфейса</label
               >
               <select id="language-switch" data-i18n-preserve>
-                <option value="ru">Русский</option>
-                <option value="en">English</option>
-                <option value="kk">Қазақша</option>
+                <option value="ru" lang="ru">Русский</option>
+                <option value="en" lang="en">English</option>
+                <option value="kk" lang="kk">Қазақша</option>
+                <option value="uz" lang="uz">O‘zbekcha</option>
               </select>
             </div>
             <a href="/" class="back-link">← К разбору</a>
@@ -357,6 +358,43 @@
                     <p id="operator-draft-text"></p>
                   </details>
                   <div class="review-block draft-block">
+                    <div class="reply-generator">
+                      <label for="admin-reply-language">Язык автоответа</label>
+                      <div class="reply-generator-controls">
+                        <select
+                          id="admin-reply-language"
+                          aria-describedby="reply-generator-help"
+                        >
+                          <option value="ru" lang="ru">Русский</option>
+                          <option value="en" lang="en">English</option>
+                          <option value="kk" lang="kk">Қазақша</option>
+                          <option value="uz" lang="uz">O‘zbekcha</option>
+                        </select>
+                        <button
+                          type="button"
+                          class="admin-secondary"
+                          id="generate-draft"
+                        >
+                          Создать черновик
+                        </button>
+                        <button
+                          type="button"
+                          class="admin-secondary"
+                          id="generate-uzbek"
+                        >
+                          Ответ на узбекском
+                        </button>
+                      </div>
+                      <p id="reply-generator-help" class="review-context">
+                        Локальный шаблон, не нейросеть. Проверьте ответ; цитаты
+                        правил остаются в оригинале.
+                      </p>
+                      <p
+                        id="reply-generator-availability"
+                        class="review-context"
+                        role="status"
+                      ></p>
+                    </div>
                     <label for="admin-draft">Ответ администратора</label>
                     <p>
                       Исправьте предложенный текст или напишите ответ

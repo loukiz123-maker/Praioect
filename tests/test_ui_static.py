@@ -65,6 +65,20 @@ class UiMarkupTests(unittest.TestCase):
         self.assertIn('$("result-announcement").textContent', self.script)
         self.assertIn('$("source-text").textContent = item.text', self.script)
 
+    def test_reply_language_is_separate_from_interface_and_persisted_for_the_form(self):
+        html = (STATIC / "index.html").read_text(encoding="utf-8")
+        select = re.search(r'<select\b[^>]*id="reply-language"[^>]*>(.*?)</select>', html, re.DOTALL)
+        self.assertIsNotNone(select)
+        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["auto", "ru", "en", "kk", "uz"])
+        buttons = {attrs.get("id"): attrs for tag, attrs in self.markup.elements if tag == "button"}
+        self.assertEqual(buttons["select-uzbek-reply"].get("type"), "button")
+        self.assertEqual(buttons["select-uzbek-reply"].get("aria-pressed"), "false")
+        self.assertIn('$("select-uzbek-reply").addEventListener("click"', self.script)
+        self.assertIn('replyLanguage: $("reply-language").value', self.script)
+        self.assertIn("payload.reply_language = requestedReplyLanguage", self.script)
+        self.assertIn("original && item.editBuffer === original.text ? original.lang : \"und\"", self.script)
+        self.assertIn('id="language-switch"', html)
+
     def test_handoff_conflict_checks_status_without_losing_editor(self):
         self.assertIn("error.status = response.status", self.script)
         self.assertIn('error.status === 409) await refreshReview(item, { force: true })', self.script)
@@ -132,22 +146,29 @@ class TranslationCoverageTests(unittest.TestCase):
     def setUpClass(cls):
         cls.script = (STATIC / "i18n.js").read_text(encoding="utf-8")
         quoted = r'"(?:[^"\\]|\\.)*"'
-        pattern = rf'^\s*({quoted}|[\w$]+)\s*:\s*\[\s*({quoted})\s*,\s*({quoted})\s*,?\s*\]'
-        rows = re.findall(pattern, cls.script, re.MULTILINE)
+        pattern = rf'^\s*({quoted}|[\w$]+)\s*:\s*\[\s*({quoted})\s*,\s*({quoted})\s*,\s*({quoted})\s*,?\s*\]'
+        dictionary = cls.script.split('  const LANGUAGE_KEY', 1)[0]
+        rows = re.findall(pattern, dictionary, re.MULTILINE)
+        all_keys = re.findall(rf'^\s*({quoted}|[\w$]+)\s*:\s*\[', dictionary, re.MULTILINE)
         cls.messages = {
-            (json.loads(key) if key.startswith('"') else key): (json.loads(en), json.loads(kk))
-            for key, en, kk in rows
+            (json.loads(key) if key.startswith('"') else key): (json.loads(en), json.loads(kk), json.loads(uz))
+            for key, en, kk, uz in rows
         }
-        if len(rows) != len(cls.messages):
-            raise AssertionError("Duplicate interface translation keys")
+        if len(rows) != len(all_keys) or len(rows) != len(cls.messages):
+            raise AssertionError("Missing translation or duplicate interface translation key")
 
     def test_both_pages_have_accessible_language_controls_and_translated_static_text(self):
         for filename in ("index.html", "admin.html"):
             with self.subTest(page=filename):
                 markup = Markup()
-                markup.feed((STATIC / filename).read_text(encoding="utf-8"))
+                html = (STATIC / filename).read_text(encoding="utf-8")
+                markup.feed(html)
                 by_id = {attrs["id"]: (tag, attrs) for tag, attrs in markup.elements if "id" in attrs}
                 self.assertEqual(by_id["language-switch"][0], "select")
+                selector = re.search(r'<select\b[^>]*id="language-switch"[^>]*>(.*?)</select>', html, re.DOTALL)
+                self.assertIsNotNone(selector)
+                self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', selector.group(1)), ["ru", "en", "kk", "uz"])
+                self.assertIn('<option value="uz" lang="uz">O‘zbekcha</option>', selector.group(1))
                 self.assertTrue(any(tag == "label" and attrs.get("for") == "language-switch" for tag, attrs in markup.elements))
                 scripts = [attrs.get("src") for tag, attrs in markup.elements if tag == "script"]
                 self.assertLess(scripts.index("/i18n.js"), len(scripts) - 1)
@@ -182,7 +203,7 @@ class TranslationCoverageTests(unittest.TestCase):
     def test_classifier_and_api_explanations_and_errors_have_translations(self):
         root = STATIC.parents[1]
         called = {"append", "InputError", "HttpFailure", "QueueConflict", "QueueNotFound", "QueueFull"}
-        for name in ("service.py", "server.py", "admin_queue.py"):
+        for name in ("service.py", "server.py", "admin_queue.py", "result_validation.py"):
             tree = ast.parse((root / "support_copilot" / name).read_text(encoding="utf-8"))
             missing = []
             for node in ast.walk(tree):
@@ -243,6 +264,22 @@ class AdminUiMarkupTests(unittest.TestCase):
         filters = [attrs.get("data-filter") for tag, attrs in self.markup.elements if tag == "button"]
         self.assertIn("escalated", filters)
         self.assertIn('/admin/api/feedback/export', self.script)
+
+    def test_local_reply_generator_has_four_languages_and_no_translation_widget(self):
+        html = (STATIC / "admin.html").read_text(encoding="utf-8")
+        select = re.search(r'<select\b[^>]*id="admin-reply-language"[^>]*>(.*?)</select>', html, re.DOTALL)
+        self.assertIsNotNone(select)
+        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["ru", "en", "kk", "uz"])
+        by_id = {attrs.get("id"): attrs for tag, attrs in self.markup.elements if tag == "button"}
+        self.assertEqual(by_id["generate-draft"].get("type"), "button")
+        self.assertEqual(by_id["generate-uzbek"].get("type"), "button")
+        self.assertIn('$("generate-draft").addEventListener("click", () => generateDraft())', self.script)
+        self.assertIn('$("generate-uzbek").addEventListener("click", () => generateDraft("uz"))', self.script)
+        self.assertIn('$("generate-uzbek").disabled = state.busy || !available', self.script)
+        self.assertIn('body: { version, language }', self.script)
+        self.assertFalse((STATIC.parent / "translation.py").exists())
+        self.assertFalse((STATIC / "translated-by-google.png").exists())
+        self.assertNotIn("/translate", self.script)
 
     def test_no_browser_storage_or_html_injection_for_private_data(self):
         self.assertNotIn("localStorage", self.script)

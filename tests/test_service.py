@@ -157,6 +157,69 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(detect_language("мени ўйинда ҳақорат қилди"), "uz")
         self.assertEqual(detect_language("Убил в зелёной зоне"), "ru")
 
+    def test_reply_language_choice_does_not_change_detection_or_rule_citations(self):
+        text = "Игрок Alex_Nova оскорбил меня и мою семью в чате"
+        baseline = self.service.triage(ticket(text))
+        self.assertEqual((baseline["lang"], baseline["draft_reply"]["lang"]), ("ru", "ru"))
+        self.assertEqual(baseline["draft_reply"]["cited"], ["2.1"])
+        for language, greeting in (("ru", "Здравствуйте"), ("en", "Hello"), ("kk", "Сәлеметсіз бе"), ("uz", "Salom")):
+            with self.subTest(language=language):
+                result = self.service.triage(ticket(text, reply_language=language))
+                self.assertEqual(result["lang"], "ru")
+                self.assertEqual(result["draft_reply"]["lang"], language)
+                self.assertIn(greeting, result["draft_reply"]["text"])
+                self.assertEqual(result["draft_reply"]["cited"], baseline["draft_reply"]["cited"])
+                self.assertIn("В игровом чате нельзя оскорблять", result["draft_reply"]["text"])
+                for field in ("category", "priority", "extracted", "needs_human", "confidence", "reasons"):
+                    self.assertEqual(result[field], baseline[field])
+
+    def test_default_reply_language_keeps_existing_auto_and_legacy_languages(self):
+        examples = (
+            ("Meni chatda haqorat qildi", "uz"),
+            ("El jugador me insultó", "es"),
+            ("O jogador me insultou", "pt"),
+            ("Hello", "en"),
+            ("Сәлем", "kk"),
+        )
+        for text, language in examples:
+            with self.subTest(language=language):
+                automatic = self.service.triage(ticket(text, lang=language))
+                explicit_auto = self.service.triage(ticket(text, lang=language, reply_language="auto"))
+                override = self.service.triage(ticket(text, lang=language, reply_language="en"))
+                self.assertEqual(automatic["draft_reply"]["lang"], language)
+                self.assertEqual(explicit_auto, automatic)
+                self.assertEqual(override["lang"], language)
+                self.assertEqual(override["draft_reply"]["lang"], "en")
+                # The private replay override also supports old stored drafts.
+                self.assertEqual(self.service.triage(ticket(text, lang=language), reply_language=language)["draft_reply"], automatic["draft_reply"])
+        for invalid in (None, "es", "RU", "", [], {}):
+            with self.subTest(invalid=invalid), self.assertRaises(InputError):
+                self.service.triage(ticket("Игрок оскорбил меня", reply_language=invalid))
+
+    def test_uzbek_reply_can_be_selected_for_non_uzbek_tickets(self):
+        for text, kind, detected in (
+            ("Игрок оскорбил меня в чате", "complaint", "ru"),
+            ("This player insulted me in chat", "complaint", "en"),
+            ("Менің тіркелгімді бұзған", "report", "kk"),
+        ):
+            with self.subTest(text=text):
+                original = self.service.triage(ticket(text, kind=kind))
+                chosen = self.service.triage(ticket(text, kind=kind, reply_language="uz"))
+                self.assertEqual((chosen["lang"], chosen["draft_reply"]["lang"]), (detected, "uz"))
+                self.assertTrue(chosen["draft_reply"]["text"].startswith("Salom!"))
+                self.assertEqual(chosen["draft_reply"]["cited"], original["draft_reply"]["cited"])
+                for key in ("category", "priority", "extracted", "needs_human", "confidence", "reasons"):
+                    self.assertEqual(chosen[key], original[key])
+
+    def test_reply_language_choice_keeps_sensitive_cases_with_a_human(self):
+        for text in ("Payment failed", "Меня забанили", "Потерял доступ к аккаунту"):
+            for language in ("ru", "en", "kk", "uz"):
+                with self.subTest(text=text, language=language):
+                    result = self.service.triage(ticket(text, kind="report", reply_language=language))
+                    self.assertTrue(result["needs_human"])
+                    self.assertEqual(result["draft_reply"]["lang"], language)
+                    self.assertNotIn("unban", result["draft_reply"]["text"].lower())
+
     def test_payment_and_ban_never_trigger_automatic_clarification(self):
         for text in ("Payment failed", "Меня забанили", "Потерял доступ к аккаунту"):
             result = self.service.triage(ticket(text, kind="report"))

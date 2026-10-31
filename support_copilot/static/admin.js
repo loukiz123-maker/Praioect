@@ -107,12 +107,114 @@ async function api(path, options = {}) {
 
 function formatDate(seconds) {
   if (!Number.isFinite(seconds)) return "—";
+  const date = new Date(seconds * 1000);
+  if (window.CopilotI18n.language === "uz") {
+    // Some browsers fall back to labels such as "M10" for Uzbek months.
+    const months = [
+      "yanvar",
+      "fevral",
+      "mart",
+      "aprel",
+      "may",
+      "iyun",
+      "iyul",
+      "avgust",
+      "sentabr",
+      "oktabr",
+      "noyabr",
+      "dekabr",
+    ];
+    const time = new Intl.DateTimeFormat("uz-UZ", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(date);
+    return `${date.getDate()} ${months[date.getMonth()]}, ${time}`;
+  }
   return new Intl.DateTimeFormat(window.CopilotI18n.locale, {
     day: "numeric",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(seconds * 1000));
+  }).format(date);
+}
+
+function canGenerateDraft(detail) {
+  return Boolean(
+    detail?.result?.draft_reply && detail.rule_candidates !== null,
+  );
+}
+
+function updateDraftGenerator() {
+  const available = canGenerateDraft(state.detail);
+  $("admin-reply-language").disabled = state.busy || !available;
+  $("generate-draft").disabled = state.busy || !available;
+  $("generate-uzbek").disabled = state.busy || !available;
+  $("reply-generator-availability").textContent =
+    state.detail && !available
+      ? "Автоматический черновик недоступен. Напишите ответ вручную."
+      : "";
+}
+
+async function generateDraft(languageOverride = null) {
+  if (!state.authenticated || state.busy || !canGenerateDraft(state.detail))
+    return;
+  const current = $("admin-draft").value;
+  const initial = state.detail.result.draft_reply.text;
+  if (
+    current.trim() &&
+    (state.dirty || current !== initial) &&
+    !window.confirm(
+      t(
+        "Заменить текущий текст новым черновиком? Несохранённые правки будут потеряны.",
+      ),
+    )
+  )
+    return;
+  const { id, version } = state.detail;
+  const language = languageOverride || $("admin-reply-language").value;
+  $("admin-reply-language").value = language;
+  setBusy(true);
+  $("review-error").textContent = "";
+  try {
+    const { data } = await api(
+      `/admin/api/reviews/${encodeURIComponent(id)}/draft`,
+      {
+        method: "POST",
+        body: { version, language },
+      },
+    );
+    if (
+      !state.authenticated ||
+      state.selected !== id ||
+      state.detail?.version !== version
+    )
+      return;
+    if (
+      data?.version !== version ||
+      data?.draft_reply?.lang !== language ||
+      typeof data.draft_reply.text !== "string" ||
+      !data.draft_reply.text.trim()
+    )
+      throw new ApiError(
+        "Не удалось создать черновик. Попробуйте ещё раз.",
+        500,
+      );
+    $("admin-draft").value = data.draft_reply.text;
+    $("admin-draft").lang = language;
+    state.dirty = true;
+    $("review-notice").textContent =
+      "Черновик создан локально. Проверьте и сохраните его; игроку он не отправлен.";
+    $("admin-draft").focus();
+  } catch (error) {
+    if (!state.authenticated || state.selected !== id) return;
+    $("review-error").textContent =
+      error instanceof TypeError
+        ? "Нет связи с сервером. Черновик не создан."
+        : error.message || "Не удалось создать черновик. Попробуйте ещё раз.";
+  } finally {
+    setBusy(false);
+  }
 }
 
 function showLogin(message = "") {
@@ -166,6 +268,9 @@ function showLogin(message = "") {
   $("rule-candidates").open = false;
   $("operator-draft-text").textContent = "";
   $("admin-draft").value = "";
+  $("admin-draft").removeAttribute("lang");
+  $("admin-reply-language").value = "ru";
+  $("reply-generator-availability").textContent = "";
   $("review-notice").textContent = "";
   $("review-error").textContent = "";
   $("admin-key").value = "";
@@ -395,10 +500,20 @@ function renderDetailText(detail) {
 }
 
 function renderDetail(detail) {
-  if (state.selected !== detail.id) $("rule-candidates").open = false;
+  const sameReview = state.selected === detail.id;
+  if (!sameReview) $("rule-candidates").open = false;
   state.detail = detail;
   state.selected = detail.id;
   state.dirty = false;
+  if (!sameReview) {
+    const originalLanguage = detail.result?.draft_reply?.lang;
+    $("admin-reply-language").value = ["ru", "en", "kk", "uz"].includes(
+      originalLanguage,
+    )
+      ? originalLanguage
+      : "ru";
+  }
+  updateDraftGenerator();
   $("review-empty").hidden = true;
   $("review-content").hidden = false;
   renderDetailText(detail);
@@ -406,6 +521,9 @@ function renderDetail(detail) {
   $("operator-draft-text").textContent = detail.operator_draft || "";
   $("admin-draft").value =
     detail.admin_draft === null ? detail.operator_draft : detail.admin_draft;
+  if ($("admin-draft").value === detail.result?.draft_reply?.text)
+    $("admin-draft").lang = detail.result.draft_reply.lang;
+  else $("admin-draft").lang = "und";
   $("review-notice").textContent =
     detail.status === "resolved"
       ? "Ответ подготовлен и доступен оператору, пока доступна его очередь. Игроку он не отправлен."
@@ -472,6 +590,7 @@ function setBusy(busy) {
     $(id).disabled =
       busy ||
       (id === "escalate-review" && state.detail?.status === "escalated");
+  updateDraftGenerator();
 }
 
 async function updateReview(status) {
@@ -687,8 +806,15 @@ $("queue-next").addEventListener("click", () => {
   refreshList();
 });
 $("refresh-queue").addEventListener("click", refreshList);
+$("generate-draft").addEventListener("click", () => generateDraft());
+$("generate-uzbek").addEventListener("click", () => generateDraft("uz"));
 $("admin-draft").addEventListener("input", () => {
   state.dirty = true;
+  const original = state.detail?.result?.draft_reply;
+  $("admin-draft").lang =
+    original && $("admin-draft").value === original.text
+      ? original.lang
+      : "und";
   $("review-notice").textContent = "Есть несохранённые правки.";
 });
 $("take-button").addEventListener("click", () => updateReview("in_progress"));

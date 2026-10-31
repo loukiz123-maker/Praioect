@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
+from .json_data import strict_json_loads
 from .rp_terms import NamedRule, described_deathmatch, mentioned_term, parse_named_terms
 from .text import contains_any, mentions_abuse_shorthand, negates_abuse, normalize, stems
 
@@ -58,8 +58,8 @@ class RuleMatch:
 def _load_json(path: str | Path, description: str) -> Any:
     try:
         with open(path, encoding="utf-8") as stream:
-            return json.load(stream)
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            return strict_json_loads(stream.read())
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         raise CatalogError(f"Не удалось прочитать {description}: {path} ({exc})") from exc
 
 

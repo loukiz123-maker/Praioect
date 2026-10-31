@@ -14,6 +14,7 @@ from .batch import iter_tickets
 from .catalog import Catalog, CatalogError
 from .config import add_data_arguments, make_service
 from .review_common import draft_fingerprint, source_fingerprint, source_snapshot, ticket_key
+from .result_validation import checked_triage
 from .service import InputError, TriageService, requires_rule
 
 
@@ -104,7 +105,7 @@ def evaluate(
             seen_ids.add(key)
         start = time.perf_counter()
         try:
-            result = service.triage(ticket)
+            result = checked_triage(service, ticket)
         except InputError as exc:
             raise InputError(f"Строка {line_number}: {exc}") from exc
         times.append(time.perf_counter() - start)

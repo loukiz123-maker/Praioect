@@ -82,6 +82,11 @@ async function send(page, text) {
         "Support Copilot қалай жұмыс істейді",
         "Өтініштер қайда сақталады",
       ],
+      [
+        "uz",
+        "Support Copilot qanday ishlaydi",
+        "Murojaatlar qayerda saqlanadi",
+      ],
     ]) {
       await page.select("#language-switch", language);
       assert.equal(await content(page, "#explanation-title"), heading);
@@ -96,16 +101,16 @@ async function send(page, text) {
       );
       assert.match(await content(page, ".memory-card:nth-child(2)"), /SQLite/);
       assert.match(await content(page, ".memory-card:nth-child(2)"), /14/);
-      const limitation = (await content(
-        page,
-        ".explanation-detail:nth-child(2)",
-      )).replace(/\s+/g, " ");
+      const limitation = (
+        await content(page, ".explanation-detail:nth-child(2)")
+      ).replace(/\s+/g, " ");
       assert.ok(
         limitation.includes(
           {
             ru: "нет меток категорий и приоритетов",
             en: "no category or priority labels",
             kk: "санаттары мен басымдықтары белгіленбеген",
+            uz: "toifa va ustuvorlik belgilari yo‘q",
           }[language],
         ),
         `The unlabelled validation limitation must be translated to ${language}`,

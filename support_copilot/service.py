@@ -33,6 +33,9 @@ NEGATED_AFTER_RE = re.compile(
 )
 GREETING_RE = re.compile(r"(?:привет|здравствуйте|здравствуй|hello|hi|hey|salom|сәлем|сәлеметсіз бе|hola|olá|ola)[\s!?.]*")
 NAMED_RULE_REASON = "Найден ненумерованный термин из правил; он не заменяет проверенный номер пункта."
+# UI choices for a deliberate reply-language override. Without an override,
+# keep using the player's detected language, including ES/PT.
+REPLY_LANGUAGE_CHOICES = frozenset({"ru", "en", "kk", "uz"})
 
 
 class InputError(ValueError):
@@ -251,6 +254,25 @@ def validate_ticket(ticket: Any) -> tuple[str, list[dict[str, Any]]]:
     kind = ticket.get("kind")
     if not isinstance(kind, str) or kind not in {"complaint", "report"}:
         raise InputError("kind должен быть complaint или report")
+    if "reply_language" in ticket:
+        language = ticket["reply_language"]
+        if not isinstance(language, str) or language not in REPLY_LANGUAGE_CHOICES | {"auto"}:
+            raise InputError("Выберите язык ответа: автоматически, RU, EN, KK или UZ.")
+    # These fields can be returned as extracted.server; rejecting excessive
+    # metadata here avoids turning valid JSON into an internal result error.
+    for name in ("server", "region"):
+        value = ticket.get(name)
+        if isinstance(value, str):
+            too_long = len(value.strip()) > 1024
+        elif isinstance(value, int) and not isinstance(value, bool):
+            try:
+                too_long = len(str(value)) > 1024
+            except ValueError:  # Interpreter limit for huge integer strings.
+                too_long = True
+        else:
+            too_long = False
+        if too_long:
+            raise InputError("Поле server или region должно быть не длиннее 1024 символов.")
     return kind, _player_messages(ticket)
 
 
@@ -259,11 +281,19 @@ class TriageService:
         self.catalog = catalog
         self.duplicates = DuplicateDetector()
 
-    def triage(self, ticket: dict[str, Any]) -> dict[str, Any]:
+    def triage(self, ticket: dict[str, Any], *, reply_language: str | None = None) -> dict[str, Any]:
         kind, player_messages = validate_ticket(ticket)
         text = "\n".join(m.get("text", "") for m in player_messages)
+        # The reply choice is independent of language detection and classification.
+        # The private override can also reproduce older UZ/ES/PT drafts.
+        if reply_language is not None and (
+            not isinstance(reply_language, str) or reply_language not in SUPPORTED_LANGUAGES
+        ):
+            raise InputError("Неверный язык черновика ответа.")
         lang = detect_language(text, ticket.get("lang"))
-        reply_lang = lang if lang in SUPPORTED_LANGUAGES else "ru"
+        chosen = ticket.get("reply_language")
+        reply_lang = reply_language or (chosen if chosen in REPLY_LANGUAGE_CHOICES else None)
+        reply_lang = reply_lang or (lang if lang in SUPPORTED_LANGUAGES else "ru")
         extracted, attached_evidence, mentioned_evidence = _extract(ticket, player_messages, text, lang)
         classification: Classification = classify(kind, text, lang, self.catalog.categories)
         category = classification.category

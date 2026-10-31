@@ -16,6 +16,7 @@ from .batch import iter_tickets
 from .catalog import CatalogError
 from .config import add_data_arguments, make_service
 from .review_common import draft_fingerprint, source_fingerprint, source_snapshot, ticket_key
+from .result_validation import checked_triage
 from .service import InputError, TriageService
 from .text import SUPPORTED_LANGUAGES
 
@@ -43,7 +44,7 @@ def create_review_pack(
             raise InputError(f"Строка {line_number}: повторный ticket_id")
         seen.add(key)
         try:
-            result = service.triage(ticket)
+            result = checked_triage(service, ticket)
         except InputError as exc:
             raise InputError(f"Строка {line_number}: {exc}") from exc
         if language is not None and result["lang"] != language:

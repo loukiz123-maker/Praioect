@@ -10,12 +10,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import Counter
 from typing import Any
 
 from .batch import iter_tickets
+from .catalog import CatalogError
 from .config import add_data_arguments, make_service
-from .service import RULE_REF_RE, TriageService, requires_rule
+from .result_validation import checked_triage
+from .service import RULE_REF_RE, InputError, TriageService, requires_rule
 
 EVIDENCE_GAP = re.compile(
     r"(?i)(?:недостаточно\s+(?:доказательств|материалов)|нет\s+доказательств|"
@@ -30,7 +33,8 @@ def _role_text(ticket: dict[str, Any], roles: set[str]) -> str:
         return ""
     return "\n".join(
         message.get("text", "") for message in messages
-        if isinstance(message, dict) and message.get("role") in roles and isinstance(message.get("text", ""), str)
+        if isinstance(message, dict) and isinstance(message.get("role"), str)
+        and message["role"] in roles and isinstance(message.get("text", ""), str)
     )
 
 
@@ -41,10 +45,13 @@ def audit(service: TriageService, input_path: str) -> dict[str, Any]:
     missing_categories: Counter[str] = Counter()
     missing_lengths: Counter[str] = Counter()
     known_numbers = {rule.number for rule in service.catalog.rules}
-    for _, ticket in iter_tickets(input_path):
+    for line_number, ticket in iter_tickets(input_path):
         # TriageService selects player/reporter messages itself and excludes
         # admin responses, reported-player responses and gold/derived fields.
-        result = service.triage(ticket)
+        try:
+            result = checked_triage(service, ticket)
+        except InputError as exc:
+            raise InputError(f"Строка {line_number}: {exc}") from exc
         player_text = _role_text(ticket, {"player", "reporter"})
         admin_text = _role_text(ticket, {"admin"})
         refs = result["draft_reply"]["cited"]
@@ -94,7 +101,12 @@ def main() -> int:
     add_data_arguments(parser)
     parser.add_argument("--in", dest="input_path", required=True, help="Приватный JSONL или предоставленная HTML-обёртка")
     args = parser.parse_args()
-    print(json.dumps(audit(make_service(args), args.input_path), ensure_ascii=False, indent=2))
+    try:
+        result = audit(make_service(args), args.input_path)
+    except (CatalogError, InputError, OSError, UnicodeError) as exc:
+        print(f"Ошибка: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

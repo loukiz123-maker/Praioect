@@ -6,8 +6,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import ticket, write_fixtures
+from support_copilot.audit import audit
 from support_copilot.batch import iter_tickets, predict
 from support_copilot.benchmark import benchmark
 from support_copilot.catalog import Catalog
@@ -57,6 +59,26 @@ class QualityToolsTests(unittest.TestCase):
                 with self.assertRaises(InputError):
                     predict(self.service(), str(source), str(output))
                 self.assertEqual(output.read_text(encoding="utf-8"), "unchanged")
+
+    def test_local_tools_reject_a_forged_excerpt_and_preserve_outputs(self):
+        service = self.service()
+        unsafe = service.triage(ticket("Игрок оскорбил меня в чате"))
+        self.assertEqual(unsafe["draft_reply"]["cited"], ["2.1"])
+        unsafe["draft_reply"]["text"] = "Пункт 2.1: выдуманная формулировка."
+        output = self.root / "output.jsonl"
+        output.write_text("prior-output", encoding="utf-8")
+        commands = (
+            lambda: predict(service, str(self.input), str(output)),
+            lambda: create_review_pack(service, str(self.input), str(output), count=2),
+            lambda: evaluate(service, str(self.input)),
+            lambda: audit(service, str(self.input)),
+        )
+        with patch.object(service, "triage", return_value=unsafe):
+            for command in commands:
+                with self.subTest(command=command), self.assertRaises(InputError):
+                    command()
+                self.assertEqual(output.read_text(encoding="utf-8"), "prior-output")
+        self.assertEqual(list(self.root.glob(".copilot-*")), [])
 
     def test_deterministic_review_pack_excludes_gold_and_admin_messages(self):
         first, second = self.root / "review-a.jsonl", self.root / "review-b.jsonl"
