@@ -224,6 +224,10 @@ async function openReview(page, id, expected) {
       true,
     );
     assert.equal(
+      await page.$eval("#generate-uzbek", (element) => element.disabled),
+      true,
+    );
+    assert.equal(
       await page.$eval("#admin-reply-language", (element) => element.disabled),
       true,
     );
@@ -328,6 +332,10 @@ async function openReview(page, id, expected) {
     await openReview(page, missing.id, failedText);
     assert.equal(
       await page.$eval("#generate-draft", (element) => element.disabled),
+      true,
+    );
+    assert.equal(
+      await page.$eval("#generate-uzbek", (element) => element.disabled),
       true,
     );
     assert.match(

@@ -125,13 +125,14 @@ function updateDraftGenerator() {
   const available = canGenerateDraft(state.detail);
   $("admin-reply-language").disabled = state.busy || !available;
   $("generate-draft").disabled = state.busy || !available;
+  $("generate-uzbek").disabled = state.busy || !available;
   $("reply-generator-availability").textContent =
     state.detail && !available
       ? "Автоматический черновик недоступен. Напишите ответ вручную."
       : "";
 }
 
-async function generateDraft() {
+async function generateDraft(languageOverride = null) {
   if (!state.authenticated || state.busy || !canGenerateDraft(state.detail))
     return;
   const current = $("admin-draft").value;
@@ -147,7 +148,8 @@ async function generateDraft() {
   )
     return;
   const { id, version } = state.detail;
-  const language = $("admin-reply-language").value;
+  const language = languageOverride || $("admin-reply-language").value;
+  $("admin-reply-language").value = language;
   setBusy(true);
   $("review-error").textContent = "";
   try {
@@ -481,7 +483,7 @@ function renderDetail(detail) {
   state.dirty = false;
   if (!sameReview) {
     const originalLanguage = detail.result?.draft_reply?.lang;
-    $("admin-reply-language").value = ["ru", "en", "kk"].includes(
+    $("admin-reply-language").value = ["ru", "en", "kk", "uz"].includes(
       originalLanguage,
     )
       ? originalLanguage
@@ -780,7 +782,8 @@ $("queue-next").addEventListener("click", () => {
   refreshList();
 });
 $("refresh-queue").addEventListener("click", refreshList);
-$("generate-draft").addEventListener("click", generateDraft);
+$("generate-draft").addEventListener("click", () => generateDraft());
+$("generate-uzbek").addEventListener("click", () => generateDraft("uz"));
 $("admin-draft").addEventListener("input", () => {
   state.dirty = true;
   const original = state.detail?.result?.draft_reply;

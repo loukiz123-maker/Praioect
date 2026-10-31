@@ -326,7 +326,7 @@ class CopilotHandler(BaseHTTPRequestHandler):
         if not isinstance(version, int) or isinstance(version, bool) or version < 1:
             raise InputError("Не указана версия обращения")
         if not isinstance(language, str) or language not in REPLY_LANGUAGE_CHOICES:
-            raise InputError("Выберите язык ответа: RU, EN или KK.")
+            raise InputError("Выберите язык ответа: RU, EN, KK или UZ.")
         queue = self._queue()
         detail = queue.get(review_id)
         if detail["version"] != version:

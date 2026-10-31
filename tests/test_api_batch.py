@@ -75,7 +75,7 @@ class ApiTests(unittest.TestCase):
 
     def test_reply_language_override_and_invalid_choices_over_http(self):
         original = "Игрок оскорбил меня в чате"
-        for language in ("ru", "en", "kk"):
+        for language in ("ru", "en", "kk", "uz"):
             payload = ticket(original, reply_language=language)
             with self.post("/triage", json.dumps(payload, ensure_ascii=False).encode()) as response:
                 result = json.load(response)
@@ -146,14 +146,14 @@ class BatchAndEvaluationTests(unittest.TestCase):
         self.assertNotIn("verdict", rows[0])
 
     def test_batch_accepts_per_ticket_reply_language_without_changing_player_language(self):
-        inputs = [ticket("Игрок оскорбил меня в чате", reply_language=lang) for lang in ("ru", "en", "kk")]
+        inputs = [ticket("Игрок оскорбил меня в чате", reply_language=lang) for lang in ("ru", "en", "kk", "uz")]
         input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"
         input_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in inputs), encoding="utf-8")
-        self.assertEqual(predict(self.service, str(input_path), str(output_path)), 3)
+        self.assertEqual(predict(self.service, str(input_path), str(output_path)), 4)
         rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual([row["lang"] for row in rows], ["ru", "ru", "ru"])
-        self.assertEqual([row["draft_reply"]["lang"] for row in rows], ["ru", "en", "kk"])
-        self.assertEqual([row["draft_reply"]["cited"] for row in rows], [["2.1"]] * 3)
+        self.assertEqual([row["lang"] for row in rows], ["ru", "ru", "ru", "ru"])
+        self.assertEqual([row["draft_reply"]["lang"] for row in rows], ["ru", "en", "kk", "uz"])
+        self.assertEqual([row["draft_reply"]["cited"] for row in rows], [["2.1"]] * 4)
 
     def test_failure_does_not_overwrite_previous_output(self):
         input_path, output_path = self.root / "input.jsonl", self.root / "output.jsonl"

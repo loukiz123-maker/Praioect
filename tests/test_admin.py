@@ -168,7 +168,7 @@ class AdminApiTests(unittest.TestCase):
         detail_before = self.queue.get(review_id)
         events_before = {key: tuple(events) for key, events in self.service.duplicates._events.items()}
         self.assertEqual((result["lang"], result["draft_reply"]["lang"]), ("ru", "en"))
-        for language, greeting in (("ru", "Здравствуйте"), ("en", "Hello"), ("kk", "Сәлеметсіз бе")):
+        for language, greeting in (("ru", "Здравствуйте"), ("en", "Hello"), ("kk", "Сәлеметсіз бе"), ("uz", "Salom")):
             status, headers, body = self.request(path, method="POST", key=TEST_KEY, value={"version": 1, "language": language})
             self.assertEqual(status, 200)
             self.assertEqual(headers["Cache-Control"], "no-store")
@@ -193,7 +193,7 @@ class AdminApiTests(unittest.TestCase):
         for body in (
             {}, {"version": True, "language": "en"}, {"version": 0, "language": "en"},
             {"version": 1, "language": []}, {"version": 1, "language": "auto"},
-            {"version": 1, "language": "uz"}, {"version": 1, "language": "en", "message": "REPLACEMENT"},
+            {"version": 1, "language": "es"}, {"version": 1, "language": "en", "message": "REPLACEMENT"},
         ):
             with self.subTest(body=body):
                 self.assertEqual(self.request(path, method="POST", key=TEST_KEY, value=body)[0], 400)
@@ -253,6 +253,13 @@ class AdminApiTests(unittest.TestCase):
         )
         self.assertEqual((status, body["draft_reply"]["lang"]), (200, "kk"))
         self.assertEqual(body["draft_reply"]["cited"], result["draft_reply"]["cited"])
+        status, _, body = self.request(
+            f"/admin/api/reviews/{review_id}/draft", method="POST", key=TEST_KEY,
+            value={"version": 1, "language": "uz"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["draft_reply"], result["draft_reply"])
+        self.assertEqual(self.queue.get(review_id)["version"], 1)
 
     def test_admin_draft_rejects_changes_that_occur_during_generation(self):
         self.triage(receipt=new_receipt())

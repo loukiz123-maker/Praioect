@@ -69,9 +69,9 @@
       "Cannot reach the server. The draft was not created.",
       "Серверге қосылу мүмкін емес. Жоба жасалған жоқ.",
     ],
-    "Выберите язык ответа: автоматически, RU, EN или KK.": [
-      "Choose a reply language: automatic, RU, EN, or KK.",
-      "Жауап тілін таңдаңыз: автоматты, RU, EN немесе KK.",
+    "Выберите язык ответа: автоматически, RU, EN, KK или UZ.": [
+      "Choose a reply language: automatic, RU, EN, KK, or UZ.",
+      "Жауап тілін таңдаңыз: автоматты, RU, EN, KK немесе UZ.",
     ],
     "Неверный язык черновика ответа.": [
       "Invalid draft language.",
@@ -81,10 +81,11 @@
       "Invalid draft request parameters.",
       "Жобаны жасау параметрлері қате.",
     ],
-    "Выберите язык ответа: RU, EN или KK.": [
-      "Choose a reply language: RU, EN, or KK.",
-      "Жауап тілін таңдаңыз: RU, EN немесе KK.",
+    "Выберите язык ответа: RU, EN, KK или UZ.": [
+      "Choose a reply language: RU, EN, KK, or UZ.",
+      "Жауап тілін таңдаңыз: RU, EN, KK немесе UZ.",
     ],
+    "Ответ на узбекском": ["Draft in Uzbek", "Өзбекше жауап жобасы"],
     "Обращение изменилось. Обновите карточку перед созданием черновика.": [
       "The ticket changed. Refresh the card before creating a draft.",
       "Өтініш өзгерді. Жобаны жасамас бұрын карточканы жаңартыңыз.",
@@ -335,10 +336,10 @@
       "Languages and original content",
       "Тілдер және түпнұсқалар",
     ],
-    "Переключатель меняет только язык интерфейса. Текст игрока, готовые черновики, цитаты правил и исходный JSON не переводятся. Для нового автоответа можно отдельно выбрать русский, английский или казахский; по умолчанию используется определённый язык игрока. Если он не определён, используется русский и требуется проверка.":
+    "Переключатель меняет только язык интерфейса. Текст игрока, готовые черновики, цитаты правил и исходный JSON не переводятся. Для нового автоответа можно отдельно выбрать русский, английский, казахский или узбекский; по умолчанию используется определённый язык игрока. Если он не определён, используется русский и требуется проверка.":
       [
-        "The switch changes only the interface language. Player text, existing drafts, rule quotations and raw JSON are not translated. For a new automatic reply, you can separately choose Russian, English or Kazakh; the detected player language is used by default. If it is undetermined, Russian is used and review is required.",
-        "Ауыстырғыш тек интерфейс тілін өзгертеді. Ойыншы мәтіні, дайын жауап жобалары, ереже дәйексөздері және бастапқы JSON аударылмайды. Жаңа автожауап үшін орыс, ағылшын немесе қазақ тілін бөлек таңдауға болады; әдепкіде ойыншының анықталған тілі қолданылады. Тіл анықталмаса, орыс тілі қолданылады және тексеру қажет.",
+        "The switch changes only the interface language. Player text, existing drafts, rule quotations and raw JSON are not translated. For a new automatic reply, you can separately choose Russian, English, Kazakh or Uzbek; the detected player language is used by default. If it is undetermined, Russian is used and review is required.",
+        "Ауыстырғыш тек интерфейс тілін өзгертеді. Ойыншы мәтіні, дайын жауап жобалары, ереже дәйексөздері және бастапқы JSON аударылмайды. Жаңа автожауап үшін орыс, ағылшын, қазақ немесе өзбек тілін бөлек таңдауға болады; әдепкіде ойыншының анықталған тілі қолданылады. Тіл анықталмаса, орыс тілі қолданылады және тексеру қажет.",
       ],
     "Границы прототипа": ["Prototype limitations", "Прототиптің шектеулері"],
     "Это эвристический MVP без LLM и внешних API. Качество на реальных данных не измерено; оценка уверенности не равна точности. Факты и окончательное решение проверяет человек.":

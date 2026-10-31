@@ -69,7 +69,11 @@ class UiMarkupTests(unittest.TestCase):
         html = (STATIC / "index.html").read_text(encoding="utf-8")
         select = re.search(r'<select\b[^>]*id="reply-language"[^>]*>(.*?)</select>', html, re.DOTALL)
         self.assertIsNotNone(select)
-        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["auto", "ru", "en", "kk"])
+        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["auto", "ru", "en", "kk", "uz"])
+        buttons = {attrs.get("id"): attrs for tag, attrs in self.markup.elements if tag == "button"}
+        self.assertEqual(buttons["select-uzbek-reply"].get("type"), "button")
+        self.assertEqual(buttons["select-uzbek-reply"].get("aria-pressed"), "false")
+        self.assertIn('$("select-uzbek-reply").addEventListener("click"', self.script)
         self.assertIn('replyLanguage: $("reply-language").value', self.script)
         self.assertIn("payload.reply_language = requestedReplyLanguage", self.script)
         self.assertIn("original && item.editBuffer === original.text ? original.lang : \"und\"", self.script)
@@ -254,14 +258,17 @@ class AdminUiMarkupTests(unittest.TestCase):
         self.assertIn("escalated", filters)
         self.assertIn('/admin/api/feedback/export', self.script)
 
-    def test_local_reply_generator_has_three_languages_and_no_translation_widget(self):
+    def test_local_reply_generator_has_four_languages_and_no_translation_widget(self):
         html = (STATIC / "admin.html").read_text(encoding="utf-8")
         select = re.search(r'<select\b[^>]*id="admin-reply-language"[^>]*>(.*?)</select>', html, re.DOTALL)
         self.assertIsNotNone(select)
-        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["ru", "en", "kk"])
+        self.assertEqual(re.findall(r'<option\s+value="([^"]+)"', select.group(1)), ["ru", "en", "kk", "uz"])
         by_id = {attrs.get("id"): attrs for tag, attrs in self.markup.elements if tag == "button"}
         self.assertEqual(by_id["generate-draft"].get("type"), "button")
-        self.assertIn('$("generate-draft").addEventListener("click", generateDraft)', self.script)
+        self.assertEqual(by_id["generate-uzbek"].get("type"), "button")
+        self.assertIn('$("generate-draft").addEventListener("click", () => generateDraft())', self.script)
+        self.assertIn('$("generate-uzbek").addEventListener("click", () => generateDraft("uz"))', self.script)
+        self.assertIn('$("generate-uzbek").disabled = state.busy || !available', self.script)
         self.assertIn('body: { version, language }', self.script)
         self.assertFalse((STATIC.parent / "translation.py").exists())
         self.assertFalse((STATIC / "translated-by-google.png").exists())

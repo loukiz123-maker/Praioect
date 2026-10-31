@@ -34,8 +34,8 @@ NEGATED_AFTER_RE = re.compile(
 GREETING_RE = re.compile(r"(?:привет|здравствуйте|здравствуй|hello|hi|hey|salom|сәлем|сәлеметсіз бе|hola|olá|ola)[\s!?.]*")
 NAMED_RULE_REASON = "Найден ненумерованный термин из правил; он не заменяет проверенный номер пункта."
 # UI choices for a deliberate reply-language override. Without an override,
-# keep using the player's detected language, including UZ/ES/PT.
-REPLY_LANGUAGE_CHOICES = frozenset({"ru", "en", "kk"})
+# keep using the player's detected language, including ES/PT.
+REPLY_LANGUAGE_CHOICES = frozenset({"ru", "en", "kk", "uz"})
 
 
 class InputError(ValueError):
@@ -257,7 +257,7 @@ def validate_ticket(ticket: Any) -> tuple[str, list[dict[str, Any]]]:
     if "reply_language" in ticket:
         language = ticket["reply_language"]
         if not isinstance(language, str) or language not in REPLY_LANGUAGE_CHOICES | {"auto"}:
-            raise InputError("Выберите язык ответа: автоматически, RU, EN или KK.")
+            raise InputError("Выберите язык ответа: автоматически, RU, EN, KK или UZ.")
     return kind, _player_messages(ticket)
 
 

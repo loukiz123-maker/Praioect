@@ -313,15 +313,26 @@
                 </div>
                 <div class="field-block">
                   <label for="reply-language">Язык автоответа</label>
-                  <select
-                    id="reply-language"
-                    aria-describedby="reply-language-help"
-                  >
-                    <option value="auto">По языку игрока (авто)</option>
-                    <option value="ru">Русский</option>
-                    <option value="en">English</option>
-                    <option value="kk">Қазақша</option>
-                  </select>
+                  <div class="reply-language-controls">
+                    <select
+                      id="reply-language"
+                      aria-describedby="reply-language-help"
+                    >
+                      <option value="auto">По языку игрока (авто)</option>
+                      <option value="ru">Русский</option>
+                      <option value="en">English</option>
+                      <option value="kk">Қазақша</option>
+                      <option value="uz">O‘zbekcha</option>
+                    </select>
+                    <button
+                      type="button"
+                      id="select-uzbek-reply"
+                      class="uzbek-reply-button"
+                      aria-pressed="false"
+                    >
+                      Узбекский
+                    </button>
+                  </div>
                   <p class="field-hint" id="reply-language-help">
                     Выбор меняет новый черновик, а не сообщение игрока. Цитаты
                     правил остаются в оригинале.
@@ -722,9 +733,9 @@
                   Переключатель меняет только язык интерфейса. Текст игрока,
                   готовые черновики, цитаты правил и исходный JSON не
                   переводятся. Для нового автоответа можно отдельно выбрать
-                  русский, английский или казахский; по умолчанию используется
-                  определённый язык игрока. Если он не определён, используется
-                  русский и требуется проверка.
+                  русский, английский, казахский или узбекский; по умолчанию
+                  используется определённый язык игрока. Если он не определён,
+                  используется русский и требуется проверка.
                 </p>
               </article>
               <article class="explanation-detail">

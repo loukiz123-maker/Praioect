@@ -187,7 +187,7 @@ function restoreSession() {
         $("attachments").value = form.attachments;
       if (typeof form.reporter === "string")
         $("reporter").value = form.reporter;
-      if (["auto", "ru", "en", "kk"].includes(form.replyLanguage))
+      if (["auto", "ru", "en", "kk", "uz"].includes(form.replyLanguage))
         $("reply-language").value = form.replyLanguage;
     }
   } catch (_) {
@@ -909,6 +909,13 @@ async function copyText(element, status) {
   }
 }
 
+function syncReplyLanguageButton() {
+  $("select-uzbek-reply").setAttribute(
+    "aria-pressed",
+    String($("reply-language").value === "uz"),
+  );
+}
+
 function bindEvents() {
   window.addEventListener(
     "resize",
@@ -937,6 +944,12 @@ function bindEvents() {
     }),
   );
   $("message").addEventListener("input", updateCharacterCount);
+  $("reply-language").addEventListener("change", syncReplyLanguageButton);
+  $("select-uzbek-reply").addEventListener("click", () => {
+    $("reply-language").value = "uz";
+    syncReplyLanguageButton();
+    persistSession();
+  });
   $("triage-form").addEventListener("input", () => {
     $("form-error").textContent = "";
     persistSession();
@@ -1078,6 +1091,7 @@ async function checkHealth() {
 
 $("reply-language").options[0].textContent = t("По языку игрока (авто)");
 restoreSession();
+syncReplyLanguageButton();
 bindNavigation();
 bindEvents();
 setKind(state.kind);
